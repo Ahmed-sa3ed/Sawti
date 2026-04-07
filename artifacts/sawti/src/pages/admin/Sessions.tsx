@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useAdminListSessions, useAdminCreateSession, useAdminUploadSentences, getAdminListSessionsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { FolderPlus, Upload } from "lucide-react";
+import { FolderPlus, Upload, FileText } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -31,6 +31,8 @@ export default function AdminSessions() {
   
   const [createOpen, setCreateOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState<number | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<z.infer<typeof sessionSchema>>({
     resolver: zodResolver(sessionSchema),
@@ -55,6 +57,24 @@ export default function AdminSessions() {
     });
   };
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFileError(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.endsWith(".txt")) {
+      setFileError("يجب أن يكون الملف من نوع .txt");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      uploadForm.setValue("sentences", text, { shouldValidate: true });
+    };
+    reader.readAsText(file, "utf-8");
+    // Reset file input so the same file can be re-selected
+    e.target.value = "";
+  };
+
   const onUploadSentences = (sessionId: number, values: z.infer<typeof uploadSchema>) => {
     const sentences = values.sentences.split('\n').map(s => s.trim()).filter(s => s.length > 0);
     if (sentences.length === 0) return;
@@ -64,6 +84,7 @@ export default function AdminSessions() {
         queryClient.invalidateQueries({ queryKey: getAdminListSessionsQueryKey() });
         setUploadOpen(null);
         uploadForm.reset();
+        setFileError(null);
         toast({ title: `تم رفع ${data.count} جملة بنجاح` });
       }
     });
@@ -141,7 +162,16 @@ export default function AdminSessions() {
                   ) : "-"}
                 </TableCell>
                 <TableCell>
-                  <Dialog open={uploadOpen === session.id} onOpenChange={(open) => setUploadOpen(open ? session.id : null)}>
+                  <Dialog
+                    open={uploadOpen === session.id}
+                    onOpenChange={(open) => {
+                      setUploadOpen(open ? session.id : null);
+                      if (!open) {
+                        uploadForm.reset();
+                        setFileError(null);
+                      }
+                    }}
+                  >
                     <DialogTrigger asChild>
                       <Button variant="outline" size="sm" className="gap-1">
                         <Upload className="h-4 w-4" /> رفع جمل
@@ -153,6 +183,27 @@ export default function AdminSessions() {
                       </DialogHeader>
                       <Form {...uploadForm}>
                         <form onSubmit={uploadForm.handleSubmit((values) => onUploadSentences(session.id, values))} className="space-y-4">
+                          <div className="flex items-center gap-2">
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              accept=".txt"
+                              className="hidden"
+                              onChange={handleFileUpload}
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-1"
+                              onClick={() => fileInputRef.current?.click()}
+                            >
+                              <FileText className="h-4 w-4" />
+                              استيراد من ملف .txt
+                            </Button>
+                            <span className="text-sm text-muted-foreground">أو أدخل الجمل يدوياً</span>
+                          </div>
+                          {fileError && <p className="text-sm text-destructive">{fileError}</p>}
                           <FormField
                             control={uploadForm.control}
                             name="sentences"
@@ -160,7 +211,7 @@ export default function AdminSessions() {
                               <FormItem>
                                 <FormLabel>الجمل (كل جملة في سطر)</FormLabel>
                                 <FormControl>
-                                  <Textarea {...field} className="h-64" dir="rtl" />
+                                  <Textarea {...field} className="h-64" dir="rtl" placeholder="اكتب الجمل هنا، جملة في كل سطر..." />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>

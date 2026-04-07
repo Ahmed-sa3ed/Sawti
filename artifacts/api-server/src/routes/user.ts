@@ -7,7 +7,7 @@ import {
   recordingsTable,
   suggestionsTable,
 } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -78,17 +78,10 @@ router.get("/sessions", async (req, res) => {
 
   const sessionIds = userSessions.map((us) => us.sessionId);
 
-  const sessions = await db
+  const filteredSessions = await db
     .select()
     .from(sessionsTable)
-    .where(
-      sessionIds.length === 1
-        ? eq(sessionsTable.id, sessionIds[0])
-        : eq(sessionsTable.id, sessionIds[0])
-    );
-
-  const sessionsAll = await db.select().from(sessionsTable);
-  const filteredSessions = sessionsAll.filter((s) => sessionIds.includes(s.id));
+    .where(inArray(sessionsTable.id, sessionIds));
 
   const result = await Promise.all(
     filteredSessions.map(async (session) => {

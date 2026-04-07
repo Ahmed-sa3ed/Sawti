@@ -408,9 +408,12 @@ router.patch("/recordings/:recordingId/status", async (req, res) => {
   const { status } = parsed.data;
 
   if (status === "rejected") {
+    // Delete the audio file from disk
     if (fs.existsSync(recording.filePath)) {
       fs.unlinkSync(recording.filePath);
     }
+    // Delete the recording row - the sentence remains assigned to the same user
+    // so they can re-record it (the sentence shows as unrecorded in their queue)
     await db.delete(recordingsTable).where(eq(recordingsTable.id, recordingId));
   } else {
     await db

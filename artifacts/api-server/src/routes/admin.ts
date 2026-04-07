@@ -165,14 +165,18 @@ router.post("/users/:userId/sessions", async (req, res) => {
       .where(eq(sentencesTable.sessionId, sessionId))
       .orderBy(sentencesTable.orderIndex);
 
-    // Find unique sentence texts (deduplicated) to know how many unique sentences there are
+    // Find unique sentence texts to know how many unique sentences there are
     const uniqueTexts = [...new Set(allSentences.map((s) => s.text))];
-    const uniqueCount = uniqueTexts.length;
 
-    // Get unassigned sentences - assign a batch of uniqueCount to this user
+    // For each unique text, pick ONE unassigned copy to assign to this user.
+    // This guarantees the user receives exactly one copy of each unique sentence.
     const unassignedSentences = allSentences.filter((s) => s.assignedUserId === null);
-    const batchSize = Math.min(uniqueCount, unassignedSentences.length);
-    const toAssign = unassignedSentences.slice(0, batchSize);
+    const usedTexts = new Set<string>();
+    const toAssign = unassignedSentences.filter((s) => {
+      if (usedTexts.has(s.text)) return false;
+      usedTexts.add(s.text);
+      return true;
+    }).slice(0, uniqueTexts.length);
 
     if (toAssign.length > 0) {
       for (const sentence of toAssign) {

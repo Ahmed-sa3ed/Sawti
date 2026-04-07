@@ -14,12 +14,12 @@ import fs from "fs";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { CreateSuggestionBody } from "@workspace/api-zod";
-import { requireAuth } from "../middlewares/auth.js";
+import { requireUser } from "../middlewares/auth.js";
 
 const execFileAsync = promisify(execFile);
 
 const router = Router();
-router.use(requireAuth);
+router.use(requireUser);
 
 function getRecordingsDir(userId: number, sessionName: string): string {
   const dir = path.join(process.cwd(), "recordings", String(userId), sessionName);

@@ -1,14 +1,15 @@
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, Redirect } from "wouter";
 import { useGetMe, useLogout } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { LayoutDashboard, Users, FolderOpen, Mic, MessageSquare, Download, LogOut } from "lucide-react";
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { data: user } = useGetMe();
+  const { data: user, isLoading } = useGetMe();
   const logout = useLogout();
   const [location] = useLocation();
 
-  if (user?.role !== "admin") return null;
+  if (isLoading) return null;
+  if (!user || user.role !== "admin") return <Redirect to="/" />;
 
   const nav = [
     { href: "/admin", label: "لوحة التحكم", icon: LayoutDashboard },

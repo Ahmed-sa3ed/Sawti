@@ -1,14 +1,15 @@
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, Redirect } from "wouter";
 import { useGetMe, useLogout } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { LayoutDashboard, MessageSquare, LogOut } from "lucide-react";
 
 export function UserLayout({ children }: { children: React.ReactNode }) {
-  const { data: user } = useGetMe();
+  const { data: user, isLoading } = useGetMe();
   const logout = useLogout();
   const [location] = useLocation();
 
-  if (user?.role !== "user") return null;
+  if (isLoading) return null;
+  if (!user || user.role !== "user") return <Redirect to="/" />;
 
   const nav = [
     { href: "/user", label: "لوحة التحكم", icon: LayoutDashboard },

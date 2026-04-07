@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { useAdminListRecordings, useAdminUpdateRecordingStatus, getAdminListRecordingsQueryKey, getAdminGetDashboardQueryKey, getAdminListSessionsQueryKey, getAdminListUsersQueryKey } from "@workspace/api-client-react";
+import { useAdminListRecordings, useAdminUpdateRecordingStatus, useAdminAcceptAllRecordings, getAdminListRecordingsQueryKey, getAdminGetDashboardQueryKey, getAdminListSessionsQueryKey, getAdminListUsersQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, XCircle, Play, Pause } from "lucide-react";
+import { CheckCircle, XCircle, Play, Pause, CheckCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function AdminRecordings() {
@@ -14,6 +14,7 @@ export default function AdminRecordings() {
   const queryParams = statusFilter !== "all" ? { status: statusFilter } : {};
   const { data: recordings, isLoading } = useAdminListRecordings(queryParams);
   const updateStatus = useAdminUpdateRecordingStatus();
+  const acceptAll = useAdminAcceptAllRecordings();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   
@@ -21,19 +22,16 @@ export default function AdminRecordings() {
   const [audioElements, setAudioElements] = useState<Record<number, HTMLAudioElement>>({});
 
   const togglePlay = (id: number, filePath: string) => {
-    // If playing the same one, pause it
     if (playingId === id) {
       audioElements[id].pause();
       setPlayingId(null);
       return;
     }
 
-    // Stop current playing
     if (playingId && audioElements[playingId]) {
       audioElements[playingId].pause();
     }
 
-    // Play new one
     let audio = audioElements[id];
     if (!audio) {
       audio = new Audio(`/api/admin/recordings/${id}/audio`);
@@ -62,25 +60,58 @@ export default function AdminRecordings() {
     });
   };
 
+  const handleAcceptAll = () => {
+    const pending = recordings?.filter(r => r.status === "pending") ?? [];
+    if (pending.length === 0) return;
+    if (!confirm(`هل أنت متأكد من قبول ${pending.length} تسجيل معلق؟`)) return;
+    acceptAll.mutate(undefined, {
+      onSuccess: (data) => {
+        queryClient.invalidateQueries({ queryKey: getAdminListRecordingsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getAdminGetDashboardQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getAdminListSessionsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
+        toast({ title: data.message });
+      },
+      onError: () => {
+        toast({ title: "فشل في قبول التسجيلات", variant: "destructive" });
+      }
+    });
+  };
+
   if (isLoading) return <div>جاري التحميل...</div>;
+
+  const pendingCount = recordings?.filter(r => r.status === "pending").length ?? 0;
 
   return (
     <div className="space-y-6" dir="rtl">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-primary">التسجيلات</h1>
         
-        <div className="w-64">
-          <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val as "pending" | "accepted" | "rejected" | "all")}>
-            <SelectTrigger dir="rtl">
-              <SelectValue placeholder="تصفية حسب الحالة" />
-            </SelectTrigger>
-            <SelectContent dir="rtl">
-              <SelectItem value="all">الكل</SelectItem>
-              <SelectItem value="pending">بانتظار المراجعة</SelectItem>
-              <SelectItem value="accepted">مقبولة</SelectItem>
-              <SelectItem value="rejected">مرفوضة</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="flex items-center gap-3">
+          {statusFilter === "pending" && pendingCount > 0 && (
+            <Button
+              variant="outline"
+              className="gap-2 border-green-300 text-green-700 hover:bg-green-50"
+              onClick={handleAcceptAll}
+              disabled={acceptAll.isPending}
+            >
+              <CheckCheck className="h-4 w-4" />
+              قبول الكل ({pendingCount})
+            </Button>
+          )}
+          <div className="w-64">
+            <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val as "pending" | "accepted" | "rejected" | "all")}>
+              <SelectTrigger dir="rtl">
+                <SelectValue placeholder="تصفية حسب الحالة" />
+              </SelectTrigger>
+              <SelectContent dir="rtl">
+                <SelectItem value="all">الكل</SelectItem>
+                <SelectItem value="pending">بانتظار المراجعة</SelectItem>
+                <SelectItem value="accepted">مقبولة</SelectItem>
+                <SelectItem value="rejected">مرفوضة</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 

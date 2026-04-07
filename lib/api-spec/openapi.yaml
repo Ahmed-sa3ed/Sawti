@@ -166,6 +166,43 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /admin/users/{userId}/password:
+    patch:
+      operationId: adminResetUserPassword
+      tags: [users]
+      summary: Reset a user's password (admin)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordRequest"
+      responses:
+        "200":
+          description: Password reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /admin/users/{userId}/sessions:
     post:
       operationId: adminAssignSession
@@ -202,6 +239,13 @@ paths:
       operationId: adminListSessions
       tags: [sessions]
       summary: List all sessions (admin)
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: If provided, exclude sessions already assigned to this user
       responses:
         "200":
           description: List of sessions with stats
@@ -265,6 +309,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/recordings/accept-all:
+    post:
+      operationId: adminAcceptAllRecordings
+      tags: [recordings]
+      summary: Accept all pending recordings (admin)
+      responses:
+        "200":
+          description: All pending recordings accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptAllRecordingsResponse"
 
   /admin/recordings:
     get:
@@ -896,6 +953,26 @@ components:
           type: boolean
       required:
         - isApproved
+
+    ResetPasswordRequest:
+      type: object
+      properties:
+        password:
+          type: string
+          minLength: 6
+      required:
+        - password
+
+    AcceptAllRecordingsResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        count:
+          type: integer
+      required:
+        - message
+        - count
 
     DashboardStats:
       type: object

@@ -6,9 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./acceptAllRecordingsResponse";
 export * from "./adminDownloadParams";
 export * from "./adminListRecordingsParams";
 export * from "./adminListRecordingsStatus";
+export * from "./adminListSessionsParams";
 export * from "./assignSessionRequest";
 export * from "./authUser";
 export * from "./authUserRole";
@@ -23,6 +25,7 @@ export * from "./messageResponse";
 export * from "./recordingInfo";
 export * from "./recordingWithDetails";
 export * from "./recordingWithDetailsStatus";
+export * from "./resetPasswordRequest";
 export * from "./sentenceWithRecording";
 export * from "./sessionInfo";
 export * from "./sessionWithStats";

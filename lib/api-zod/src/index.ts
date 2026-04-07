@@ -1,8 +1,10 @@
 export * from "./generated/api";
 export type {
+  AcceptAllRecordingsResponse,
   AdminDownloadParams,
   AdminListRecordingsParams,
   AdminListRecordingsStatus,
+  AdminListSessionsParams,
   AssignSessionRequest,
   AuthUser,
   AuthUserRole,
@@ -17,6 +19,7 @@ export type {
   RecordingInfo,
   RecordingWithDetails,
   RecordingWithDetailsStatus,
+  ResetPasswordRequest,
   SentenceWithRecording,
   SessionInfo,
   SessionWithStats,

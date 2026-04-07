@@ -17,8 +17,10 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AcceptAllRecordingsResponse,
   AdminDownloadParams,
   AdminListRecordingsParams,
+  AdminListSessionsParams,
   AssignSessionRequest,
   AuthUser,
   CreateSessionRequest,
@@ -31,6 +33,7 @@ import type {
   MessageResponse,
   RecordingInfo,
   RecordingWithDetails,
+  ResetPasswordRequest,
   SentenceWithRecording,
   SessionInfo,
   SessionWithStats,
@@ -607,6 +610,93 @@ export const useAdminDeleteUser = <
 };
 
 /**
+ * @summary Reset a user's password (admin)
+ */
+export const getAdminResetUserPasswordUrl = (userId: number) => {
+  return `/api/admin/users/${userId}/password`;
+};
+
+export const adminResetUserPassword = async (
+  userId: number,
+  resetPasswordRequest: ResetPasswordRequest,
+  options?: RequestInit,
+): Promise<MessageResponse> => {
+  return customFetch<MessageResponse>(getAdminResetUserPasswordUrl(userId), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(resetPasswordRequest),
+  });
+};
+
+export const getAdminResetUserPasswordMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminResetUserPassword>>,
+    TError,
+    { userId: number; data: BodyType<ResetPasswordRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminResetUserPassword>>,
+  TError,
+  { userId: number; data: BodyType<ResetPasswordRequest> },
+  TContext
+> => {
+  const mutationKey = ["adminResetUserPassword"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminResetUserPassword>>,
+    { userId: number; data: BodyType<ResetPasswordRequest> }
+  > = (props) => {
+    const { userId, data } = props ?? {};
+
+    return adminResetUserPassword(userId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminResetUserPasswordMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminResetUserPassword>>
+>;
+export type AdminResetUserPasswordMutationBody = BodyType<ResetPasswordRequest>;
+export type AdminResetUserPasswordMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Reset a user's password (admin)
+ */
+export const useAdminResetUserPassword = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminResetUserPassword>>,
+    TError,
+    { userId: number; data: BodyType<ResetPasswordRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminResetUserPassword>>,
+  TError,
+  { userId: number; data: BodyType<ResetPasswordRequest> },
+  TContext
+> => {
+  return useMutation(getAdminResetUserPasswordMutationOptions(options));
+};
+
+/**
  * @summary Assign a session to a user (admin)
  */
 export const getAdminAssignSessionUrl = (userId: number) => {
@@ -696,41 +786,60 @@ export const useAdminAssignSession = <
 /**
  * @summary List all sessions (admin)
  */
-export const getAdminListSessionsUrl = () => {
-  return `/api/admin/sessions`;
+export const getAdminListSessionsUrl = (params?: AdminListSessionsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/admin/sessions?${stringifiedParams}`
+    : `/api/admin/sessions`;
 };
 
 export const adminListSessions = async (
+  params?: AdminListSessionsParams,
   options?: RequestInit,
 ): Promise<SessionWithStats[]> => {
-  return customFetch<SessionWithStats[]>(getAdminListSessionsUrl(), {
+  return customFetch<SessionWithStats[]>(getAdminListSessionsUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getAdminListSessionsQueryKey = () => {
-  return [`/api/admin/sessions`] as const;
+export const getAdminListSessionsQueryKey = (
+  params?: AdminListSessionsParams,
+) => {
+  return [`/api/admin/sessions`, ...(params ? [params] : [])] as const;
 };
 
 export const getAdminListSessionsQueryOptions = <
   TData = Awaited<ReturnType<typeof adminListSessions>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof adminListSessions>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: AdminListSessionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminListSessions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getAdminListSessionsQueryKey();
+  const queryKey =
+    queryOptions?.queryKey ?? getAdminListSessionsQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof adminListSessions>>
-  > = ({ signal }) => adminListSessions({ signal, ...requestOptions });
+  > = ({ signal }) => adminListSessions(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof adminListSessions>>,
@@ -751,15 +860,18 @@ export type AdminListSessionsQueryError = ErrorType<unknown>;
 export function useAdminListSessions<
   TData = Awaited<ReturnType<typeof adminListSessions>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof adminListSessions>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getAdminListSessionsQueryOptions(options);
+>(
+  params?: AdminListSessionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminListSessions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminListSessionsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -942,6 +1054,90 @@ export const useAdminUploadSentences = <
   TContext
 > => {
   return useMutation(getAdminUploadSentencesMutationOptions(options));
+};
+
+/**
+ * @summary Accept all pending recordings (admin)
+ */
+export const getAdminAcceptAllRecordingsUrl = () => {
+  return `/api/admin/recordings/accept-all`;
+};
+
+export const adminAcceptAllRecordings = async (
+  options?: RequestInit,
+): Promise<AcceptAllRecordingsResponse> => {
+  return customFetch<AcceptAllRecordingsResponse>(
+    getAdminAcceptAllRecordingsUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getAdminAcceptAllRecordingsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminAcceptAllRecordings>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminAcceptAllRecordings>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["adminAcceptAllRecordings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminAcceptAllRecordings>>,
+    void
+  > = () => {
+    return adminAcceptAllRecordings(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminAcceptAllRecordingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminAcceptAllRecordings>>
+>;
+
+export type AdminAcceptAllRecordingsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Accept all pending recordings (admin)
+ */
+export const useAdminAcceptAllRecordings = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminAcceptAllRecordings>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminAcceptAllRecordings>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getAdminAcceptAllRecordingsMutationOptions(options));
 };
 
 /**

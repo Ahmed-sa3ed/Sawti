@@ -185,6 +185,16 @@ export interface UpdateSuggestionRequest {
   isApproved: boolean;
 }
 
+export interface ResetPasswordRequest {
+  /** @minLength 6 */
+  password: string;
+}
+
+export interface AcceptAllRecordingsResponse {
+  message: string;
+  count: number;
+}
+
 export interface DashboardStats {
   totalUsers: number;
   totalSessions: number;
@@ -195,6 +205,13 @@ export interface DashboardStats {
   pendingRecordings: number;
   pendingSuggestions: number;
 }
+
+export type AdminListSessionsParams = {
+  /**
+   * If provided, exclude sessions already assigned to this user
+   */
+  userId?: number;
+};
 
 export type AdminListRecordingsParams = {
   status?: AdminListRecordingsStatus;

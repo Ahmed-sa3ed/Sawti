@@ -80,6 +80,23 @@ export const AdminDeleteUserResponse = zod.object({
 });
 
 /**
+ * @summary Reset a user's password (admin)
+ */
+export const AdminResetUserPasswordParams = zod.object({
+  userId: zod.coerce.number(),
+});
+
+export const adminResetUserPasswordBodyPasswordMin = 6;
+
+export const AdminResetUserPasswordBody = zod.object({
+  password: zod.string().min(adminResetUserPasswordBodyPasswordMin),
+});
+
+export const AdminResetUserPasswordResponse = zod.object({
+  message: zod.string(),
+});
+
+/**
  * @summary Assign a session to a user (admin)
  */
 export const AdminAssignSessionParams = zod.object({
@@ -97,6 +114,13 @@ export const AdminAssignSessionResponse = zod.object({
 /**
  * @summary List all sessions (admin)
  */
+export const AdminListSessionsQueryParams = zod.object({
+  userId: zod.coerce
+    .number()
+    .optional()
+    .describe("If provided, exclude sessions already assigned to this user"),
+});
+
 export const AdminListSessionsResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
@@ -128,6 +152,14 @@ export const AdminUploadSentencesParams = zod.object({
 
 export const AdminUploadSentencesBody = zod.object({
   sentences: zod.array(zod.string()),
+});
+
+/**
+ * @summary Accept all pending recordings (admin)
+ */
+export const AdminAcceptAllRecordingsResponse = zod.object({
+  message: zod.string(),
+  count: zod.number(),
 });
 
 /**

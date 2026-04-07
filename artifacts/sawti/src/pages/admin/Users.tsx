@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { useAdminListUsers, useAdminCreateUser, useAdminDeleteUser, useAdminAssignSession, useAdminListSessions, getAdminListUsersQueryKey } from "@workspace/api-client-react";
+import { useAdminListUsers, useAdminCreateUser, useAdminDeleteUser, useAdminAssignSession, useAdminListSessions, useAdminResetUserPassword, getAdminListUsersQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { Trash2, UserPlus, FilePlus } from "lucide-react";
+import { Trash2, UserPlus, FilePlus, KeyRound } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -23,17 +23,26 @@ const assignSchema = z.object({
   sessionId: z.coerce.number().min(1, "مطلوب"),
 });
 
+const resetPasswordSchema = z.object({
+  password: z.string().min(6, "6 أحرف على الأقل"),
+  confirmPassword: z.string().min(6, "مطلوب"),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "كلمتا المرور غير متطابقتين",
+  path: ["confirmPassword"],
+});
+
 export default function AdminUsers() {
   const { data: users, isLoading } = useAdminListUsers();
-  const { data: sessions } = useAdminListSessions();
   const createUser = useAdminCreateUser();
   const deleteUser = useAdminDeleteUser();
   const assignSession = useAdminAssignSession();
+  const resetPassword = useAdminResetUserPassword();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   
   const [createOpen, setCreateOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState<number | null>(null);
+  const [resetPasswordOpen, setResetPasswordOpen] = useState<number | null>(null);
 
   const form = useForm<z.infer<typeof userSchema>>({
     resolver: zodResolver(userSchema),
@@ -43,6 +52,15 @@ export default function AdminUsers() {
   const assignForm = useForm<z.infer<typeof assignSchema>>({
     resolver: zodResolver(assignSchema),
   });
+
+  const resetPasswordForm = useForm<z.infer<typeof resetPasswordSchema>>({
+    resolver: zodResolver(resetPasswordSchema),
+    defaultValues: { password: "", confirmPassword: "" },
+  });
+
+  const { data: sessionsForAssign } = useAdminListSessions(
+    assignOpen !== null ? { userId: assignOpen } : undefined
+  );
 
   if (isLoading) return <div>جاري التحميل...</div>;
 
@@ -64,6 +82,19 @@ export default function AdminUsers() {
         setAssignOpen(null);
         assignForm.reset();
         toast({ title: "تم تعيين الجلسة" });
+      }
+    });
+  };
+
+  const onResetPassword = (userId: number, values: z.infer<typeof resetPasswordSchema>) => {
+    resetPassword.mutate({ userId, data: { password: values.password } }, {
+      onSuccess: () => {
+        setResetPasswordOpen(null);
+        resetPasswordForm.reset();
+        toast({ title: "تم تحديث كلمة المرور بنجاح" });
+      },
+      onError: () => {
+        toast({ title: "فشل تحديث كلمة المرور", variant: "destructive" });
       }
     });
   };
@@ -157,7 +188,10 @@ export default function AdminUsers() {
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
-                    <Dialog open={assignOpen === user.id} onOpenChange={(open) => setAssignOpen(open ? user.id : null)}>
+                    <Dialog open={assignOpen === user.id} onOpenChange={(open) => {
+                      setAssignOpen(open ? user.id : null);
+                      if (!open) assignForm.reset();
+                    }}>
                       <DialogTrigger asChild>
                         <Button variant="outline" size="sm" className="gap-1">
                           <FilePlus className="h-4 w-4" /> تعيين جلسة
@@ -182,9 +216,13 @@ export default function AdminUsers() {
                                       </SelectTrigger>
                                     </FormControl>
                                     <SelectContent dir="rtl">
-                                      {sessions?.map(s => (
-                                        <SelectItem key={s.id} value={s.id.toString()}>{s.name} ({s.totalSentences} جملة)</SelectItem>
-                                      ))}
+                                      {(sessionsForAssign ?? []).length === 0 ? (
+                                        <div className="px-4 py-2 text-sm text-muted-foreground">لا توجد جلسات متاحة</div>
+                                      ) : (
+                                        (sessionsForAssign ?? []).map(s => (
+                                          <SelectItem key={s.id} value={s.id.toString()}>{s.name} ({s.totalSentences} جملة)</SelectItem>
+                                        ))
+                                      )}
                                     </SelectContent>
                                   </Select>
                                   <FormMessage />
@@ -196,6 +234,54 @@ export default function AdminUsers() {
                         </Form>
                       </DialogContent>
                     </Dialog>
+
+                    <Dialog open={resetPasswordOpen === user.id} onOpenChange={(open) => {
+                      setResetPasswordOpen(open ? user.id : null);
+                      if (!open) resetPasswordForm.reset();
+                    }}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm" className="gap-1">
+                          <KeyRound className="h-4 w-4" /> تغيير كلمة المرور
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent dir="rtl">
+                        <DialogHeader>
+                          <DialogTitle>تغيير كلمة مرور {user.username}</DialogTitle>
+                        </DialogHeader>
+                        <Form {...resetPasswordForm}>
+                          <form onSubmit={resetPasswordForm.handleSubmit((values) => onResetPassword(user.id, values))} className="space-y-4">
+                            <FormField
+                              control={resetPasswordForm.control}
+                              name="password"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>كلمة المرور الجديدة</FormLabel>
+                                  <FormControl>
+                                    <Input type="password" {...field} dir="ltr" className="text-right" />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={resetPasswordForm.control}
+                              name="confirmPassword"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>تأكيد كلمة المرور</FormLabel>
+                                  <FormControl>
+                                    <Input type="password" {...field} dir="ltr" className="text-right" />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <Button type="submit" className="w-full" disabled={resetPassword.isPending}>حفظ</Button>
+                          </form>
+                        </Form>
+                      </DialogContent>
+                    </Dialog>
+
                     <Button variant="destructive" size="icon" onClick={() => onDeleteUser(user.id)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>

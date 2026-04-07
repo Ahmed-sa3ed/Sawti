@@ -22,6 +22,8 @@ import {
   AdminAssignSessionBody,
   AdminDownloadQueryParams,
   AdminListRecordingsQueryParams,
+  AdminListSessionsQueryParams,
+  AdminResetUserPasswordBody,
 } from "@workspace/api-zod";
 import { requireAdmin } from "../middlewares/auth.js";
 
@@ -125,6 +127,36 @@ router.delete("/users/:userId", async (req, res) => {
   res.json({ message: "تم حذف المستخدم بنجاح" });
 });
 
+router.patch("/users/:userId/password", async (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (isNaN(userId)) {
+    res.status(400).json({ error: "معرف غير صالح" });
+    return;
+  }
+
+  const parsed = AdminResetUserPasswordBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "كلمة المرور يجب أن تكون 6 أحرف على الأقل" });
+    return;
+  }
+
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+
+  if (!user) {
+    res.status(404).json({ error: "المستخدم غير موجود" });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+  await db.update(usersTable).set({ passwordHash }).where(eq(usersTable.id, userId));
+
+  res.json({ message: "تم تحديث كلمة المرور بنجاح" });
+});
+
 router.post("/users/:userId/sessions", async (req, res) => {
   const userId = parseInt(req.params.userId);
   const parsed = AdminAssignSessionBody.safeParse(req.body);
@@ -192,6 +224,18 @@ router.post("/users/:userId/sessions", async (req, res) => {
 });
 
 router.get("/sessions", async (req, res) => {
+  const paramsResult = AdminListSessionsQueryParams.safeParse(req.query);
+  const params = paramsResult.success ? paramsResult.data : {};
+
+  let assignedSessionIds: Set<number> = new Set();
+  if (params.userId !== undefined) {
+    const assigned = await db
+      .select({ sessionId: userSessionsTable.sessionId })
+      .from(userSessionsTable)
+      .where(eq(userSessionsTable.userId, params.userId));
+    assignedSessionIds = new Set(assigned.map((a) => a.sessionId));
+  }
+
   const sessions = await db.select().from(sessionsTable);
 
   const sessionsWithStats = await Promise.all(
@@ -224,7 +268,11 @@ router.get("/sessions", async (req, res) => {
     })
   );
 
-  res.json(sessionsWithStats);
+  const filteredSessions = assignedSessionIds.size > 0
+    ? sessionsWithStats.filter((s) => !assignedSessionIds.has(s.id))
+    : sessionsWithStats;
+
+  res.json(filteredSessions);
 });
 
 router.post("/sessions", async (req, res) => {
@@ -306,6 +354,26 @@ router.post("/sessions/:sessionId/sentences", async (req, res) => {
     message: `تم إضافة ${shuffled.length} جملة بنجاح`,
     count: shuffled.length,
   });
+});
+
+router.post("/recordings/accept-all", async (req, res) => {
+  const pendingRecordings = await db
+    .select()
+    .from(recordingsTable)
+    .where(eq(recordingsTable.status, "pending"));
+
+  if (pendingRecordings.length === 0) {
+    res.json({ message: "لا توجد تسجيلات بانتظار المراجعة", count: 0 });
+    return;
+  }
+
+  const ids = pendingRecordings.map((r) => r.id);
+  await db
+    .update(recordingsTable)
+    .set({ status: "accepted" })
+    .where(inArray(recordingsTable.id, ids));
+
+  res.json({ message: `تم قبول ${pendingRecordings.length} تسجيل`, count: pendingRecordings.length });
 });
 
 router.get("/recordings", async (req, res) => {

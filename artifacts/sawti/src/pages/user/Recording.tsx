@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
-import { useGetUserSessionSentences, useSubmitRecording, getGetUserSessionSentencesQueryKey, getGetUserSessionsQueryKey } from "@workspace/api-client-react";
+import { useGetUserSessionSentences, useSubmitRecording, getGetUserSessionSentencesQueryKey, getGetUserSessionsQueryKey, useGetUserSessions } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Mic, Square, Play, RefreshCw, Send, Volume2, ArrowRight } from "lucide-react";
+import { Mic, Square, Play, RefreshCw, Send, Volume2, ArrowRight, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function UserRecording() {
@@ -16,11 +16,12 @@ export default function UserRecording() {
   
   const sid = parseInt(sessionId || "0");
   const { data: sentences, isLoading } = useGetUserSessionSentences(sid, { query: { enabled: sid > 0, queryKey: getGetUserSessionSentencesQueryKey(sid) } });
+  const { data: allSessions } = useGetUserSessions();
   const submitRecording = useSubmitRecording();
   
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [sessionDone, setSessionDone] = useState(false);
   
-  // Recording state
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -29,7 +30,6 @@ export default function UserRecording() {
   const audioChunksRef = useRef<BlobPart[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Find first unrecorded sentence on load
   useEffect(() => {
     if (sentences && currentIndex === 0) {
       const firstUnrecorded = sentences.findIndex(s => !s.recordingId);
@@ -39,7 +39,6 @@ export default function UserRecording() {
     }
   }, [sentences]);
 
-  // Reset recording state when sentence changes
   useEffect(() => {
     setAudioBlob(null);
     setIsRecording(false);
@@ -86,9 +85,24 @@ export default function UserRecording() {
 
   const playTTS = (text: string) => {
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ar-SA';
-    window.speechSynthesis.speak(utterance);
+    const speak = () => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ar-SA';
+      const voices = window.speechSynthesis.getVoices();
+      const arabicVoice = voices.find(v => v.lang.startsWith('ar'));
+      if (arabicVoice) utterance.voice = arabicVoice;
+      window.speechSynthesis.speak(utterance);
+    };
+
+    if (window.speechSynthesis.getVoices().length > 0) {
+      speak();
+    } else {
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.onvoiceschanged = null;
+        speak();
+      };
+      speak();
+    }
   };
 
   const playRecording = () => {
@@ -120,15 +134,13 @@ export default function UserRecording() {
         queryClient.invalidateQueries({ queryKey: getGetUserSessionSentencesQueryKey(sid) });
         queryClient.invalidateQueries({ queryKey: getGetUserSessionsQueryKey() });
         
-        // Move to next unrecorded or next index
         const nextUnrecorded = sentences?.findIndex((s, i) => i > currentIndex && !s.recordingId);
-        if (nextUnrecorded && nextUnrecorded !== -1) {
+        if (nextUnrecorded !== undefined && nextUnrecorded !== -1) {
           setCurrentIndex(nextUnrecorded);
         } else if (sentences && currentIndex < sentences.length - 1) {
           setCurrentIndex(currentIndex + 1);
         } else {
-          // Finished session
-          setLocation("/user");
+          setSessionDone(true);
         }
       }
     });
@@ -140,6 +152,35 @@ export default function UserRecording() {
   const currentSentence = sentences[currentIndex];
   const recordedCount = sentences.filter(s => !!s.recordingId).length;
   const progress = (recordedCount / sentences.length) * 100;
+
+  const nextSession = allSessions?.find(s => {
+    if (s.id === sid) return false;
+    return s.recordedCount < s.totalSentences;
+  });
+
+  if (sessionDone) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center max-w-2xl mx-auto w-full text-center" dir="rtl">
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-12 space-y-6">
+          <CheckCircle className="h-16 w-16 text-green-500 mx-auto" />
+          <h2 className="text-3xl font-bold text-green-800">أحسنت! انتهيت من هذه الجلسة</h2>
+          <p className="text-lg text-green-700">
+            لقد أكملت جميع جمل هذه الجلسة. يمكنك الاستراحة الآن أو الانتقال إلى الجلسة التالية.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
+            <Button variant="outline" size="lg" onClick={() => setLocation("/user?rest=1")}>
+              <ArrowRight className="h-4 w-4 ml-2" /> الاستراحة والعودة للرئيسية
+            </Button>
+            {nextSession && (
+              <Button size="lg" onClick={() => setLocation(`/user/session/${nextSession.id}`)}>
+                الانتقال للجلسة التالية
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full" dir="rtl">

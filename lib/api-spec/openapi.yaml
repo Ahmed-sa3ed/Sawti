@@ -3,13 +3,28 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API specification for صوتي voice data collection app
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: users
+    description: User management (admin)
+  - name: sessions
+    description: Session management (admin)
+  - name: sentences
+    description: Sentences
+  - name: recordings
+    description: Recordings
+  - name: suggestions
+    description: Sentence suggestions
+  - name: dashboard
+    description: Dashboard stats
+
 paths:
   /healthz:
     get:
@@ -24,6 +39,479 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/users:
+    get:
+      operationId: adminListUsers
+      tags: [users]
+      summary: List all users (admin)
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserWithProgress"
+    post:
+      operationId: adminCreateUser
+      tags: [users]
+      summary: Create a new user (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserInfo"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Username already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/users/{userId}:
+    delete:
+      operationId: adminDeleteUser
+      tags: [users]
+      summary: Delete a user (admin)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/users/{userId}/sessions:
+    post:
+      operationId: adminAssignSession
+      tags: [users]
+      summary: Assign a session to a user (admin)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignSessionRequest"
+      responses:
+        "200":
+          description: Session assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/sessions:
+    get:
+      operationId: adminListSessions
+      tags: [sessions]
+      summary: List all sessions (admin)
+      responses:
+        "200":
+          description: List of sessions with stats
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SessionWithStats"
+    post:
+      operationId: adminCreateSession
+      tags: [sessions]
+      summary: Create a new session (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionInfo"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/sessions/{sessionId}/sentences:
+    post:
+      operationId: adminUploadSentences
+      tags: [sessions]
+      summary: Upload sentences to a session (admin)
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadSentencesRequest"
+      responses:
+        "201":
+          description: Sentences uploaded and distributed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadSentencesResponse"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/recordings:
+    get:
+      operationId: adminListRecordings
+      tags: [recordings]
+      summary: List recordings for review (admin)
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, accepted, rejected]
+        - name: userId
+          in: query
+          schema:
+            type: integer
+        - name: sessionId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of recordings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecordingWithDetails"
+
+  /admin/recordings/{recordingId}/status:
+    patch:
+      operationId: adminUpdateRecordingStatus
+      tags: [recordings]
+      summary: Accept or reject a recording (admin)
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRecordingStatusRequest"
+      responses:
+        "200":
+          description: Recording status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "404":
+          description: Recording not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/suggestions:
+    get:
+      operationId: adminListSuggestions
+      tags: [suggestions]
+      summary: List sentence suggestions (admin)
+      responses:
+        "200":
+          description: List of suggestions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SuggestionWithUser"
+
+  /admin/suggestions/{suggestionId}:
+    patch:
+      operationId: adminUpdateSuggestion
+      tags: [suggestions]
+      summary: Approve or reject a suggestion (admin)
+      parameters:
+        - name: suggestionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSuggestionRequest"
+      responses:
+        "200":
+          description: Suggestion updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/dashboard:
+    get:
+      operationId: adminGetDashboard
+      tags: [dashboard]
+      summary: Get admin dashboard statistics
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /admin/download:
+    get:
+      operationId: adminDownload
+      tags: [recordings]
+      summary: Download recordings as ZIP (admin)
+      parameters:
+        - name: userId
+          in: query
+          schema:
+            type: integer
+        - name: sessionId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: ZIP file download
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+
+  /user/sessions:
+    get:
+      operationId: getUserSessions
+      tags: [sessions]
+      summary: Get sessions assigned to current user
+      responses:
+        "200":
+          description: User sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserSessionWithProgress"
+
+  /user/sessions/{sessionId}/sentences:
+    get:
+      operationId: getUserSessionSentences
+      tags: [sentences]
+      summary: Get sentences for a session assigned to current user
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Sentences with recording status
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SentenceWithRecording"
+        "403":
+          description: Session not assigned to user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /user/recordings:
+    post:
+      operationId: submitRecording
+      tags: [recordings]
+      summary: Submit a recording
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                sentenceId:
+                  type: integer
+                sessionId:
+                  type: integer
+                audio:
+                  type: string
+                  format: binary
+              required:
+                - sentenceId
+                - sessionId
+                - audio
+      responses:
+        "201":
+          description: Recording submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingInfo"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /user/suggestions:
+    post:
+      operationId: createSuggestion
+      tags: [suggestions]
+      summary: Suggest a new sentence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSuggestionRequest"
+      responses:
+        "201":
+          description: Suggestion created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuggestionInfo"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +522,376 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
+
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required:
+        - username
+        - password
+
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        role:
+          type: string
+          enum: [user, admin]
+      required:
+        - id
+        - username
+        - role
+
+    CreateUserRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required:
+        - username
+        - password
+
+    UserInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        role:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - username
+        - role
+        - createdAt
+
+    UserWithProgress:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        role:
+          type: string
+        createdAt:
+          type: string
+        totalSentences:
+          type: integer
+        completedRecordings:
+          type: integer
+        acceptedRecordings:
+          type: integer
+        rejectedRecordings:
+          type: integer
+      required:
+        - id
+        - username
+        - role
+        - createdAt
+        - totalSentences
+        - completedRecordings
+        - acceptedRecordings
+        - rejectedRecordings
+
+    AssignSessionRequest:
+      type: object
+      properties:
+        sessionId:
+          type: integer
+      required:
+        - sessionId
+
+    CreateSessionRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+      required:
+        - name
+
+    SessionInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - createdAt
+
+    SessionWithStats:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        totalSentences:
+          type: integer
+        assignedUsers:
+          type: integer
+        totalRecordings:
+          type: integer
+        acceptedRecordings:
+          type: integer
+      required:
+        - id
+        - name
+        - createdAt
+        - totalSentences
+        - assignedUsers
+        - totalRecordings
+        - acceptedRecordings
+
+    UploadSentencesRequest:
+      type: object
+      properties:
+        sentences:
+          type: array
+          items:
+            type: string
+      required:
+        - sentences
+
+    UploadSentencesResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        count:
+          type: integer
+      required:
+        - message
+        - count
+
+    RecordingInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+        sentenceId:
+          type: integer
+        sessionId:
+          type: integer
+        status:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - sentenceId
+        - sessionId
+        - status
+        - createdAt
+
+    RecordingWithDetails:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        username:
+          type: string
+        sessionId:
+          type: integer
+        sessionName:
+          type: string
+        sentenceId:
+          type: integer
+        sentenceText:
+          type: string
+        status:
+          type: string
+          enum: [pending, accepted, rejected]
+        filePath:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - userId
+        - username
+        - sessionId
+        - sessionName
+        - sentenceId
+        - sentenceText
+        - status
+        - filePath
+        - createdAt
+
+    UpdateRecordingStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [accepted, rejected]
+      required:
+        - status
+
+    SentenceWithRecording:
+      type: object
+      properties:
+        id:
+          type: integer
+        text:
+          type: string
+        orderIndex:
+          type: integer
+        recordingId:
+          type: ["integer", "null"]
+        recordingStatus:
+          type: ["string", "null"]
+      required:
+        - id
+        - text
+        - orderIndex
+
+    UserSessionWithProgress:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        totalSentences:
+          type: integer
+        recordedCount:
+          type: integer
+        acceptedCount:
+          type: integer
+      required:
+        - id
+        - name
+        - totalSentences
+        - recordedCount
+        - acceptedCount
+
+    SuggestionInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+        text:
+          type: string
+        isDuplicate:
+          type: boolean
+        createdAt:
+          type: string
+      required:
+        - id
+        - text
+        - isDuplicate
+        - createdAt
+
+    SuggestionWithUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        text:
+          type: string
+        userId:
+          type: integer
+        username:
+          type: string
+        isDuplicate:
+          type: boolean
+        isApproved:
+          type: ["boolean", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - text
+        - userId
+        - username
+        - isDuplicate
+        - createdAt
+
+    CreateSuggestionRequest:
+      type: object
+      properties:
+        text:
+          type: string
+      required:
+        - text
+
+    UpdateSuggestionRequest:
+      type: object
+      properties:
+        isApproved:
+          type: boolean
+      required:
+        - isApproved
+
+    DashboardStats:
+      type: object
+      properties:
+        totalUsers:
+          type: integer
+        totalSessions:
+          type: integer
+        totalSentences:
+          type: integer
+        totalRecordings:
+          type: integer
+        acceptedRecordings:
+          type: integer
+        rejectedRecordings:
+          type: integer
+        pendingRecordings:
+          type: integer
+        pendingSuggestions:
+          type: integer
+      required:
+        - totalUsers
+        - totalSessions
+        - totalSentences
+        - totalRecordings
+        - acceptedRecordings
+        - rejectedRecordings
+        - pendingRecordings
+        - pendingSuggestions

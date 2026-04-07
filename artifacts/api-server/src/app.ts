@@ -34,9 +34,53 @@ app.use(
   }),
 );
 
+// Build allowed origins from environment:
+// - REPLIT_DOMAINS contains comma-separated list of domains for this Repl
+// - Additional origins can be added via CORS_ALLOWED_ORIGINS
+function buildAllowedOrigins(): string[] {
+  const origins: string[] = [];
+  const replitDomains = process.env.REPLIT_DOMAINS;
+  if (replitDomains) {
+    replitDomains.split(",").forEach((d) => {
+      const domain = d.trim();
+      if (domain) {
+        origins.push(`https://${domain}`);
+      }
+    });
+  }
+  const extraOrigins = process.env.CORS_ALLOWED_ORIGINS;
+  if (extraOrigins) {
+    extraOrigins.split(",").forEach((o) => {
+      const origin = o.trim();
+      if (origin) origins.push(origin);
+    });
+  }
+  // Always allow localhost in development
+  if (process.env.NODE_ENV !== "production") {
+    origins.push("http://localhost:80");
+    origins.push("http://localhost:3000");
+    origins.push("http://localhost:5173");
+  }
+  return origins;
+}
+
+const allowedOrigins = buildAllowedOrigins();
+
 app.use(
   cors({
-    origin: true,
+    origin: (origin, callback) => {
+      // Allow same-origin requests (no Origin header)
+      if (!origin) return callback(null, true);
+      // Allow if origin is in the allowed list, or if it ends with a Replit domain
+      const allowed =
+        allowedOrigins.includes(origin) ||
+        /\.repl\.co$/.test(origin) ||
+        /\.replit\.app$/.test(origin) ||
+        /\.replit\.dev$/.test(origin) ||
+        /\.picard\.replit\.dev$/.test(origin);
+      if (allowed) return callback(null, true);
+      return callback(new Error(`CORS: origin ${origin} not allowed`));
+    },
     credentials: true,
   })
 );
@@ -57,6 +101,7 @@ app.use(
     cookie: {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   })

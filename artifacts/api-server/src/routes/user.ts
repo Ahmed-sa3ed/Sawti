@@ -11,8 +11,12 @@ import { eq, and } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { CreateSuggestionBody } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/auth.js";
+
+const execFileAsync = promisify(execFile);
 
 const router = Router();
 router.use(requireAuth);
@@ -23,31 +27,37 @@ function getRecordingsDir(userId: number, sessionName: string): string {
   return dir;
 }
 
-const storage = multer.diskStorage({
-  destination: async (req, _file, cb) => {
-    try {
-      const userId = req.session.userId!;
-      const sessionId = parseInt(req.body.sessionId);
-      const [session] = await db
-        .select()
-        .from(sessionsTable)
-        .where(eq(sessionsTable.id, sessionId))
-        .limit(1);
-      const dir = getRecordingsDir(userId, session?.name ?? String(sessionId));
-      cb(null, dir);
-    } catch (err) {
-      cb(err as Error, "");
-    }
-  },
-  filename: (_req, file, cb) => {
-    const timestamp = Date.now();
-    const ext = file.mimetype.includes("webm") ? ".webm" : ".audio";
-    cb(null, `recording_${timestamp}${ext}`);
-  },
-});
+async function convertToWav16kMono(inputBuffer: Buffer, inputMimeType: string): Promise<Buffer> {
+  const tmpDir = path.join(process.cwd(), "recordings", "tmp");
+  fs.mkdirSync(tmpDir, { recursive: true });
+
+  const timestamp = Date.now();
+  const ext = inputMimeType.includes("webm") ? ".webm" : inputMimeType.includes("ogg") ? ".ogg" : ".audio";
+  const inputPath = path.join(tmpDir, `input_${timestamp}${ext}`);
+  const outputPath = path.join(tmpDir, `output_${timestamp}.wav`);
+
+  fs.writeFileSync(inputPath, inputBuffer);
+
+  try {
+    await execFileAsync("ffmpeg", [
+      "-y",
+      "-i", inputPath,
+      "-ar", "16000",
+      "-ac", "1",
+      "-acodec", "pcm_s16le",
+      outputPath,
+    ]);
+
+    const wavBuffer = fs.readFileSync(outputPath);
+    return wavBuffer;
+  } finally {
+    if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+  }
+}
 
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
 });
 
@@ -185,7 +195,7 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
   const userId = req.session.userId!;
   const file = req.file;
 
-  if (!file) {
+  if (!file || !file.buffer) {
     res.status(400).json({ error: "لم يتم رفع الملف الصوتي" });
     return;
   }
@@ -233,6 +243,28 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
     return;
   }
 
+  // Convert uploaded audio to WAV 16kHz mono using ffmpeg
+  let wavBuffer: Buffer;
+  try {
+    wavBuffer = await convertToWav16kMono(file.buffer, file.mimetype);
+  } catch (convErr) {
+    res.status(422).json({ error: "تعذر معالجة الملف الصوتي. يرجى التحقق من صحة الملف." });
+    return;
+  }
+
+  // Determine output directory and file path
+  const [sessionRow] = await db
+    .select()
+    .from(sessionsTable)
+    .where(eq(sessionsTable.id, sessionId))
+    .limit(1);
+
+  const dir = getRecordingsDir(userId, sessionRow?.name ?? String(sessionId));
+  const timestamp = Date.now();
+  const filePath = path.join(dir, `recording_${timestamp}.wav`);
+  fs.writeFileSync(filePath, wavBuffer);
+
+  // Delete any existing recordings for this sentence by this user (and their files)
   const existingRecordings = await db
     .select()
     .from(recordingsTable)
@@ -256,7 +288,7 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
       userId,
       sessionId,
       sentenceId,
-      filePath: file.path,
+      filePath,
     })
     .returning();
 

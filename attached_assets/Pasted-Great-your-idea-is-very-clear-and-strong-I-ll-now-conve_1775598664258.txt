@@ -1,0 +1,414 @@
+Great — your idea is very clear and strong. I’ll now convert everything into a complete, structured Replit Agent prompt that you can directly paste and use.
+
+
+---
+
+✅ Replit Agent Prompt for Project "صوتي"
+
+🟢 Project Name
+
+صوتي
+
+
+---
+
+🟢 Project Description
+
+Build a web-based application for collecting high-quality voice recordings from users to be used later for Automatic Speech Recognition (ASR) model fine-tuning.
+
+The system should allow:
+
+Users to read and record sentences
+
+Admin to manage users, sessions, and recordings
+
+Storage and organization of audio data for ML preprocessing
+
+
+
+---
+
+🟢 Target Platform
+
+Web Application (Fully responsive)
+
+Optimized for:
+
+📱 Mobile
+
+📲 Tablets
+
+
+
+
+---
+
+🟢 Operating Environment
+
+Online (server-based)
+
+Audio files stored on server until downloaded by admin
+
+
+
+---
+
+🟢 Hosting
+
+Use Replit environment (Flask backend)
+
+File storage on server filesystem
+
+Optional future upgrade: AWS S3 or cloud storage
+
+
+
+---
+
+🟢 Technology Stack
+
+Backend: Python (Flask)
+
+Frontend: HTML, CSS, JavaScript
+
+Database: SQLite (simple start) → scalable to PostgreSQL
+
+Audio Handling: Web MediaRecorder API
+
+TTS: Browser native Text-to-Speech API
+
+
+
+---
+
+🟢 Language Preferences
+
+Replit Agent interaction language: English
+
+Application interface language: Arabic (RTL)
+
+
+
+---
+
+🟢 UI / UX Requirements
+
+Full Arabic interface (RTL layout)
+
+Large, clear Arabic fonts
+
+Accessibility-focused (for users with motor disabilities)
+
+Large buttons with:
+
+Icons + text labels
+
+
+Simple and clean design
+
+
+
+---
+
+🟢 Core Features
+
+👤 User Side
+
+Authentication
+
+Login with username + password
+
+"Remember me" option
+
+
+Recording Interface
+
+Each user session includes:
+
+Display sentence clearly
+
+Buttons:
+
+🔊 Listen to sentence (TTS)
+
+🎤 Start recording
+
+⏹ Stop recording
+
+▶️ Play recorded audio
+
+🔁 Re-record (overwrite previous)
+
+✅ Submit recording
+
+
+
+Progress Tracking
+
+Progress bar showing:
+
+Session name
+
+Completion percentage
+
+
+Each session = 50 sentences
+
+
+Sentence Suggestions
+
+User can suggest new sentences
+
+System checks:
+
+Duplicate detection
+
+Marks duplicates
+
+
+Sent to admin for approval
+
+
+
+---
+
+🧑‍💼 Admin Side (Full Dashboard)
+
+User Management
+
+Create users (username/password auto-generated)
+
+Delete users
+
+Assign sessions/groups to users
+
+
+Session Management
+
+Upload sentences via:
+
+Text file (one sentence per line)
+
+Manual input
+
+
+System automatically:
+
+Duplicates each sentence 3 times
+
+Randomly distributes across sessions
+
+
+
+Session Rules
+
+Each session = 50 sentences
+
+Designed to fit ~15 minutes recording
+
+
+
+---
+
+🎧 Recording Review System
+
+Admin can:
+
+Listen to each recording
+
+Accept / Reject recordings
+
+
+If rejected:
+
+Recording is deleted
+
+Sentence reassigned to user for re-recording
+
+
+
+---
+
+📂 File Storage Structure
+
+Store recordings on server:
+
+/recordings/
+  /user_id/
+    /session_name/
+      sentence_001.wav
+      sentence_002.wav
+      ...
+    metadata.csv
+
+
+---
+
+📥 Download Features
+
+Admin can:
+
+Download:
+
+Per session
+
+Per user
+
+All data
+
+
+Each download includes:
+
+Audio files
+
+CSV file with:
+
+Sentence text
+
+File name
+
+Status (accepted/rejected)
+
+Timestamp
+
+
+
+
+
+---
+
+🎵 Audio Requirements
+
+Format: WAV
+
+Sample Rate: 16,000 Hz (16kHz)
+
+Mono channel
+
+Clean format suitable for Python preprocessing
+
+
+
+---
+
+📊 Admin Dashboard
+
+Include:
+
+User progress tracking
+
+Session completion status
+
+Download status
+
+Number of accepted/rejected recordings
+
+Visualization (progress bars)
+
+
+
+---
+
+🟢 Additional Features
+
+Duplicate sentence detection system
+
+Session assignment system
+
+Recording overwrite functionality
+
+Accessibility-first UI
+
+Mobile-first responsive design
+
+
+
+---
+
+🟢 Suggested Project Structure
+
+/app.py
+/models/
+  user.py
+  session.py
+  recording.py
+/routes/
+  auth.py
+  user.py
+  admin.py
+/templates/
+  login.html
+  dashboard_user.html
+  dashboard_admin.html
+/static/
+  /css
+  /js
+  /icons
+/recordings/
+
+
+---
+
+🟢 Expected Outputs
+
+Fully working Flask web application
+
+User recording interface
+
+Admin dashboard
+
+Organized audio dataset ready for ASR training
+
+Downloadable dataset with CSV metadata
+
+
+
+---
+
+🟢 Interface Style
+
+Minimalist
+
+Clean
+
+High contrast
+
+Large buttons
+
+Arabic-first UX
+
+Icon-supported actions
+
+
+
+---
+
+🟢 Example Inspirations (Optional)
+
+Voice data collection tools (like Common Voice concept)
+
+Simple survey + recording apps
+
+
+
+---
+
+🟢 Notes for Replit Agent
+
+Prioritize simplicity and clarity in code
+
+Use modular Flask structure
+
+Ensure mobile responsiveness
+
+Focus on usability and accessibility
+
+Handle audio recording reliably across browsers
+
+
+
+---
+
+If you want, I can next: ✅ Break this into step-by-step build phases
+✅ Generate database schema (tables)
+✅ Or give you ready starter code (Flask project skeleton)

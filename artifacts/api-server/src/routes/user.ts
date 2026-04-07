@@ -39,9 +39,10 @@ const storage = multer.diskStorage({
       cb(err as Error, "");
     }
   },
-  filename: (_req, _file, cb) => {
+  filename: (_req, file, cb) => {
     const timestamp = Date.now();
-    cb(null, `recording_${timestamp}.wav`);
+    const ext = file.mimetype.includes("webm") ? ".webm" : ".audio";
+    cb(null, `recording_${timestamp}${ext}`);
   },
 });
 

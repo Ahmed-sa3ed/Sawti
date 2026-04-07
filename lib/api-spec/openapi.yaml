@@ -295,6 +295,36 @@ paths:
                 items:
                   $ref: "#/components/schemas/RecordingWithDetails"
 
+  /admin/recordings/{recordingId}/audio:
+    get:
+      operationId: adminGetRecordingAudio
+      tags: [recordings]
+      summary: Stream audio file for a recording (admin)
+      parameters:
+        - name: recordingId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Audio file stream
+          content:
+            audio/webm:
+              schema:
+                type: string
+                format: binary
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Recording or audio file not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /admin/recordings/{recordingId}/status:
     patch:
       operationId: adminUpdateRecordingStatus

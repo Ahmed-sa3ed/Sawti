@@ -1048,6 +1048,98 @@ export function useAdminListRecordings<
 }
 
 /**
+ * @summary Stream audio file for a recording (admin)
+ */
+export const getAdminGetRecordingAudioUrl = (recordingId: number) => {
+  return `/api/admin/recordings/${recordingId}/audio`;
+};
+
+export const adminGetRecordingAudio = async (
+  recordingId: number,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getAdminGetRecordingAudioUrl(recordingId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getAdminGetRecordingAudioQueryKey = (recordingId: number) => {
+  return [`/api/admin/recordings/${recordingId}/audio`] as const;
+};
+
+export const getAdminGetRecordingAudioQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminGetRecordingAudio>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  recordingId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminGetRecordingAudio>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getAdminGetRecordingAudioQueryKey(recordingId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof adminGetRecordingAudio>>
+  > = ({ signal }) =>
+    adminGetRecordingAudio(recordingId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!recordingId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminGetRecordingAudio>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminGetRecordingAudioQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminGetRecordingAudio>>
+>;
+export type AdminGetRecordingAudioQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Stream audio file for a recording (admin)
+ */
+
+export function useAdminGetRecordingAudio<
+  TData = Awaited<ReturnType<typeof adminGetRecordingAudio>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  recordingId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof adminGetRecordingAudio>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminGetRecordingAudioQueryOptions(
+    recordingId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary Accept or reject a recording (admin)
  */
 export const getAdminUpdateRecordingStatusUrl = (recordingId: number) => {

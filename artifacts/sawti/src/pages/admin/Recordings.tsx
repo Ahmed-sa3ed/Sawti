@@ -36,8 +36,6 @@ export default function AdminRecordings() {
     // Play new one
     let audio = audioElements[id];
     if (!audio) {
-      // In a real app this would use the proper API URL, but since we don't have it, 
-      // we'll try to play the file directly or fallback
       audio = new Audio(`/api/admin/recordings/${id}/audio`);
       audio.onended = () => setPlayingId(null);
       setAudioElements(prev => ({ ...prev, [id]: audio }));

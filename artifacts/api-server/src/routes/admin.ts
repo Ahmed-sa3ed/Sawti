@@ -366,7 +366,16 @@ router.get("/recordings/:recordingId/audio", async (req, res) => {
 
   const stat = fs.statSync(recording.filePath);
   const fileExt = path.extname(recording.filePath).toLowerCase();
-  const contentType = fileExt === ".wav" ? "audio/wav" : "audio/webm";
+  let contentType: string;
+  if (fileExt === ".wav") {
+    contentType = "audio/wav";
+  } else if (fileExt === ".webm") {
+    contentType = "audio/webm";
+  } else if (fileExt === ".ogg") {
+    contentType = "audio/ogg";
+  } else {
+    contentType = "application/octet-stream";
+  }
 
   res.setHeader("Content-Type", contentType);
   res.setHeader("Content-Length", stat.size);

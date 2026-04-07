@@ -156,6 +156,13 @@ export const AdminListRecordingsResponse = zod.array(
 );
 
 /**
+ * @summary Stream audio file for a recording (admin)
+ */
+export const AdminGetRecordingAudioParams = zod.object({
+  recordingId: zod.coerce.number(),
+});
+
+/**
  * @summary Accept or reject a recording (admin)
  */
 export const AdminUpdateRecordingStatusParams = zod.object({

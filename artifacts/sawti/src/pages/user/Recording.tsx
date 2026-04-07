@@ -25,6 +25,7 @@ export default function UserRecording() {
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
@@ -43,6 +44,8 @@ export default function UserRecording() {
     setAudioBlob(null);
     setIsRecording(false);
     setIsPlaying(false);
+    setIsSpeaking(false);
+    window.speechSynthesis?.cancel();
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = "";
@@ -84,25 +87,46 @@ export default function UserRecording() {
   };
 
   const playTTS = (text: string) => {
+    if (!window.speechSynthesis) {
+      toast({ title: "متصفحك لا يدعم تشغيل الصوت", variant: "destructive" });
+      return;
+    }
+
+    // Cancel any ongoing speech first
     window.speechSynthesis.cancel();
-    const speak = () => {
+    setIsSpeaking(false);
+
+    const doSpeak = () => {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'ar-SA';
+      utterance.rate = 0.9;
+
       const voices = window.speechSynthesis.getVoices();
       const arabicVoice = voices.find(v => v.lang.startsWith('ar'));
       if (arabicVoice) utterance.voice = arabicVoice;
+
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        toast({ title: "تعذر تشغيل الصوت", variant: "destructive" });
+      };
+
       window.speechSynthesis.speak(utterance);
     };
 
-    if (window.speechSynthesis.getVoices().length > 0) {
-      speak();
-    } else {
-      window.speechSynthesis.onvoiceschanged = () => {
-        window.speechSynthesis.onvoiceschanged = null;
-        speak();
-      };
-      speak();
-    }
+    // Chrome bug workaround: speechSynthesis can get stuck; a short timeout helps
+    setTimeout(() => {
+      if (window.speechSynthesis.getVoices().length > 0) {
+        doSpeak();
+      } else {
+        window.speechSynthesis.onvoiceschanged = () => {
+          window.speechSynthesis.onvoiceschanged = null;
+          doSpeak();
+        };
+        doSpeak();
+      }
+    }, 100);
   };
 
   const playRecording = () => {
@@ -224,8 +248,20 @@ export default function UserRecording() {
 
       <div className="bg-card border rounded-xl p-6 shadow-sm mb-6">
         <div className="flex justify-center items-center gap-4 mb-6">
-          <Button variant="outline" size="lg" className="rounded-full h-14 px-6 gap-2" onClick={() => playTTS(currentSentence.text)}>
-            <Volume2 className="h-5 w-5" /> استمع
+          <Button
+            variant={isSpeaking ? "default" : "outline"}
+            size="lg"
+            className="rounded-full h-14 px-6 gap-2"
+            onClick={() => {
+              if (isSpeaking) {
+                window.speechSynthesis.cancel();
+                setIsSpeaking(false);
+              } else {
+                playTTS(currentSentence.text);
+              }
+            }}
+          >
+            <Volume2 className="h-5 w-5" /> {isSpeaking ? "إيقاف" : "استمع"}
           </Button>
 
           {!isRecording && !audioBlob && (

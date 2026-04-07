@@ -15,7 +15,7 @@ export default function UserRecording() {
   const queryClient = useQueryClient();
   
   const sid = parseInt(sessionId || "0");
-  const { data: sentences, isLoading } = useGetUserSessionSentences(sid, { query: { enabled: sid > 0 } });
+  const { data: sentences, isLoading } = useGetUserSessionSentences(sid, { query: { enabled: sid > 0, queryKey: getGetUserSessionSentencesQueryKey(sid) } });
   const submitRecording = useSubmitRecording();
   
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -111,13 +111,10 @@ export default function UserRecording() {
 
   const submit = () => {
     if (!audioBlob || !currentSentence) return;
-    
-    const formData = new FormData();
-    formData.append("sentenceId", currentSentence.id.toString());
-    formData.append("sessionId", sid.toString());
-    formData.append("audio", audioBlob, "recording.webm");
-    
-    submitRecording.mutate({ data: formData as any }, {
+
+    const audioFile = new File([audioBlob], "recording.webm", { type: audioBlob.type });
+
+    submitRecording.mutate({ data: { sentenceId: currentSentence.id, sessionId: sid, audio: audioFile } }, {
       onSuccess: () => {
         toast({ title: "تم الإرسال بنجاح" });
         queryClient.invalidateQueries({ queryKey: getGetUserSessionSentencesQueryKey(sid) });

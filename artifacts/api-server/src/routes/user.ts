@@ -197,6 +197,41 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
     return;
   }
 
+  // Authorization check: verify user is assigned to this session
+  const [userSession] = await db
+    .select()
+    .from(userSessionsTable)
+    .where(
+      and(
+        eq(userSessionsTable.userId, userId),
+        eq(userSessionsTable.sessionId, sessionId)
+      )
+    )
+    .limit(1);
+
+  if (!userSession) {
+    res.status(403).json({ error: "غير مصرح بالوصول إلى هذه الجلسة" });
+    return;
+  }
+
+  // Authorization check: verify the sentence belongs to this user
+  const [sentence] = await db
+    .select()
+    .from(sentencesTable)
+    .where(
+      and(
+        eq(sentencesTable.id, sentenceId),
+        eq(sentencesTable.sessionId, sessionId),
+        eq(sentencesTable.assignedUserId, userId)
+      )
+    )
+    .limit(1);
+
+  if (!sentence) {
+    res.status(403).json({ error: "هذه الجملة غير مخصصة لك" });
+    return;
+  }
+
   const existingRecordings = await db
     .select()
     .from(recordingsTable)

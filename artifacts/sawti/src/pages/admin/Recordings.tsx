@@ -72,7 +72,7 @@ export default function AdminRecordings() {
         <h1 className="text-3xl font-bold text-primary">التسجيلات</h1>
         
         <div className="w-64">
-          <Select value={statusFilter} onValueChange={(val: any) => setStatusFilter(val)}>
+          <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val as "pending" | "accepted" | "rejected" | "all")}>
             <SelectTrigger dir="rtl">
               <SelectValue placeholder="تصفية حسب الحالة" />
             </SelectTrigger>

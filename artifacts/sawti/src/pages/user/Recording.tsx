@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useGetUserSessionSentences, useSubmitRecording, getGetUserSessionSentencesQueryKey, getGetUserSessionsQueryKey, useGetUserSessions } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Mic, Square, Check, Send, Volume2, RefreshCw, ArrowRight, CheckCircle, AlertTriangle } from "lucide-react";
+import { Mic, Square, Check, Send, Volume2, RotateCcw, ArrowRight, CheckCircle, AlertTriangle, Play } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function UserRecording() {
@@ -352,7 +352,7 @@ export default function UserRecording() {
                   <div className="relative">
                     {(isRecording || hasRecording) && (
                       <div className={`absolute inset-[-6px] rounded-full border-[3px] ${
-                        isRecording ? "border-red-500/70 animate-pulse" : "border-teal-500/50"
+                        isRecording ? "border-red-500/70 animate-pulse" : "border-amber-500/40"
                       }`} />
                     )}
                     <button
@@ -361,19 +361,23 @@ export default function UserRecording() {
                         isRecording
                           ? "bg-red-600/80 border-red-500 text-white animate-pulse"
                           : hasRecording
-                          ? "bg-slate-800 border-slate-600 text-teal-400 hover:bg-slate-700 hover:border-slate-500"
+                          ? "bg-amber-500/10 border-amber-500 text-amber-400 hover:bg-amber-500/20"
                           : "bg-teal-500 border-teal-400 text-slate-950 hover:bg-teal-400 shadow-[0_0_20px_rgba(20,184,166,0.4)]"
                       }`}
                     >
                       {isRecording
                         ? <Square size={32} className="fill-current" />
                         : hasRecording
-                        ? <Check size={36} strokeWidth={3} />
+                        ? <RotateCcw size={32} strokeWidth={2.5} />
                         : <Mic size={32} />
                       }
                     </button>
                   </div>
-                  <span className="text-sm font-medium text-slate-400 bg-slate-900/80 px-3 py-1 rounded-full border border-slate-800">
+                  <span className={`text-sm font-medium px-3 py-1 rounded-full border ${
+                    hasRecording
+                      ? "text-amber-400 bg-amber-500/10 border-amber-500/30"
+                      : "text-slate-400 bg-slate-900/80 border-slate-800"
+                  }`}>
                     {isRecording ? "إيقاف التسجيل" : hasRecording ? "إعادة التسجيل" : "اضغط للتسجيل"}
                   </span>
                 </div>
@@ -409,11 +413,15 @@ export default function UserRecording() {
             {hasRecording && (
               <button
                 onClick={playRecording}
-                className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
+                className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl border-2 font-bold text-base transition-all ${
+                  isPlaying
+                    ? "bg-sky-500/10 border-sky-500 text-sky-300 hover:bg-sky-500/20"
+                    : "bg-slate-800 border-slate-500 text-slate-100 hover:bg-slate-700 hover:border-slate-400"
+                }`}
               >
                 {isPlaying
-                  ? <><Square size={14} className="fill-current" /> إيقاف استماع للتسجيل</>
-                  : <><Volume2 size={14} /> استمع للتسجيل</>
+                  ? <><Square size={22} className="fill-current flex-shrink-0" /><span>إيقاف الاستماع للتسجيل</span></>
+                  : <><Play size={22} className="fill-current flex-shrink-0" /><span>استمع للتسجيل</span></>
                 }
               </button>
             )}

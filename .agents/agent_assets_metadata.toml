@@ -1,0 +1,20 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "p-WpqKj-HAY5UvgkhZSRf"
+uri = "file://artifacts/sawti-ui-option-1.png"
+type = "image"
+title = "Clean SaaS RTL dashboard"
+
+[[generated]]
+id = "pNXZ32aEsQyF3IbA1jZg7"
+uri = "file://artifacts/sawti-ui-option-2.png"
+type = "image"
+title = "Dark premium recording UI"
+
+[[generated]]
+id = "oLf16h0ZaSstw6lYisjFs"
+uri = "file://artifacts/sawti-ui-option-3.png"
+type = "image"
+title = "Friendly mobile-first RTL UI"

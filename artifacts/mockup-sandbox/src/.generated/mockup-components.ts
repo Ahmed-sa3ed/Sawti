@@ -6,10 +6,10 @@ export const modules: ModuleMap = {
   "./components/mockups/RecordingVariantA.tsx": () => import("../components/mockups/RecordingVariantA.tsx"),
   "./components/mockups/RecordingVariantB.tsx": () => import("../components/mockups/RecordingVariantB.tsx"),
   "./components/mockups/RecordingVariantC.tsx": () => import("../components/mockups/RecordingVariantC.tsx"),
-  "./components/mockups/sawti-variants/VariantA.tsx": () => import("../components/mockups/sawti-variants/VariantA.tsx"),
-  "./components/mockups/sawti-variants/VariantB.tsx": () => import("../components/mockups/sawti-variants/VariantB.tsx"),
-  "./components/mockups/sawti-variants/VariantC.tsx": () => import("../components/mockups/sawti-variants/VariantC.tsx"),
   "./components/mockups/sawti-usability/AccessibilityFirst.tsx": () => import("../components/mockups/sawti-usability/AccessibilityFirst.tsx"),
   "./components/mockups/sawti-usability/AffordanceFirst.tsx": () => import("../components/mockups/sawti-usability/AffordanceFirst.tsx"),
-  "./components/mockups/sawti-usability/HierarchyFirst.tsx": () => import("../components/mockups/sawti-usability/HierarchyFirst.tsx")
+  "./components/mockups/sawti-usability/HierarchyFirst.tsx": () => import("../components/mockups/sawti-usability/HierarchyFirst.tsx"),
+  "./components/mockups/sawti-variants/VariantA.tsx": () => import("../components/mockups/sawti-variants/VariantA.tsx"),
+  "./components/mockups/sawti-variants/VariantB.tsx": () => import("../components/mockups/sawti-variants/VariantB.tsx"),
+  "./components/mockups/sawti-variants/VariantC.tsx": () => import("../components/mockups/sawti-variants/VariantC.tsx")
 };

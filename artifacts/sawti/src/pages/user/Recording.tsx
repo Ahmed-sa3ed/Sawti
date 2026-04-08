@@ -27,6 +27,9 @@ export default function UserRecording() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsUrlRef = useRef<string | null>(null);
+  const ttsAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (sentences && currentIndex === 0) {
@@ -40,7 +43,19 @@ export default function UserRecording() {
     setIsRecording(false);
     setIsPlaying(false);
     setIsSpeaking(false);
-    window.speechSynthesis?.cancel();
+    if (ttsAbortRef.current) {
+      ttsAbortRef.current.abort();
+      ttsAbortRef.current = null;
+    }
+    if (ttsAudioRef.current) {
+      ttsAudioRef.current.pause();
+      ttsAudioRef.current.src = "";
+      ttsAudioRef.current = null;
+    }
+    if (ttsUrlRef.current) {
+      URL.revokeObjectURL(ttsUrlRef.current);
+      ttsUrlRef.current = null;
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = "";
@@ -75,39 +90,89 @@ export default function UserRecording() {
     }
   };
 
-  const playTTS = (text: string) => {
-    if (!window.speechSynthesis) {
-      toast({ title: "متصفحك لا يدعم تشغيل الصوت", variant: "destructive" });
+  const stopTTS = () => {
+    if (ttsAbortRef.current) {
+      ttsAbortRef.current.abort();
+      ttsAbortRef.current = null;
+    }
+    if (ttsAudioRef.current) {
+      ttsAudioRef.current.pause();
+      ttsAudioRef.current.src = "";
+      ttsAudioRef.current = null;
+    }
+    if (ttsUrlRef.current) {
+      URL.revokeObjectURL(ttsUrlRef.current);
+      ttsUrlRef.current = null;
+    }
+    setIsSpeaking(false);
+  };
+
+  const playTTS = async (text: string) => {
+    if (isSpeaking) {
+      stopTTS();
       return;
     }
-    window.speechSynthesis.cancel();
-    setIsSpeaking(false);
-    const doSpeak = () => {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "ar-SA";
-      utterance.rate = 0.9;
-      const voices = window.speechSynthesis.getVoices();
-      const arabicVoice = voices.find(v => v.lang.startsWith("ar"));
-      if (arabicVoice) utterance.voice = arabicVoice;
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => {
+
+    setIsSpeaking(true);
+    const controller = new AbortController();
+    ttsAbortRef.current = controller;
+
+    try {
+      const response = await fetch(`/api/user/tts?text=${encodeURIComponent(text)}`, {
+        credentials: "include",
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
         setIsSpeaking(false);
+        ttsAbortRef.current = null;
+        toast({ title: "تعذر تشغيل الصوت", variant: "destructive" });
+        return;
+      }
+
+      const blob = await response.blob();
+      ttsAbortRef.current = null;
+
+      const url = URL.createObjectURL(blob);
+      ttsUrlRef.current = url;
+
+      const audio = new Audio(url);
+      ttsAudioRef.current = audio;
+
+      const cleanup = () => {
+        if (ttsUrlRef.current) {
+          URL.revokeObjectURL(ttsUrlRef.current);
+          ttsUrlRef.current = null;
+        }
+        ttsAudioRef.current = null;
+      };
+
+      audio.onended = () => {
+        setIsSpeaking(false);
+        cleanup();
+      };
+
+      audio.onerror = () => {
+        setIsSpeaking(false);
+        cleanup();
         toast({ title: "تعذر تشغيل الصوت", variant: "destructive" });
       };
-      window.speechSynthesis.speak(utterance);
-    };
-    setTimeout(() => {
-      if (window.speechSynthesis.getVoices().length > 0) {
-        doSpeak();
-      } else {
-        window.speechSynthesis.onvoiceschanged = () => {
-          window.speechSynthesis.onvoiceschanged = null;
-          doSpeak();
-        };
-        doSpeak();
+
+      try {
+        await audio.play();
+      } catch {
+        setIsSpeaking(false);
+        cleanup();
+        toast({ title: "تعذر تشغيل الصوت", variant: "destructive" });
       }
-    }, 100);
+    } catch (err: unknown) {
+      ttsAbortRef.current = null;
+      if (err instanceof Error && err.name === "AbortError") {
+        return;
+      }
+      setIsSpeaking(false);
+      toast({ title: "تعذر تشغيل الصوت", variant: "destructive" });
+    }
   };
 
   const playRecording = () => {
@@ -328,12 +393,7 @@ export default function UserRecording() {
               <div className="flex-1 flex justify-center">
                 <button
                   onClick={() => {
-                    if (isSpeaking) {
-                      window.speechSynthesis.cancel();
-                      setIsSpeaking(false);
-                    } else {
-                      playTTS(currentSentence.text);
-                    }
+                    playTTS(currentSentence.text);
                   }}
                   className={`flex items-center gap-2 px-5 py-4 rounded-full border-2 font-bold text-base transition-all shadow-lg ${
                     isSpeaking

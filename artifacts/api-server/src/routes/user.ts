@@ -296,6 +296,39 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
   });
 });
 
+router.get("/tts", async (req, res) => {
+  const text = req.query.text;
+  if (!text || typeof text !== "string" || text.trim() === "") {
+    res.status(400).json({ error: "النص مطلوب" });
+    return;
+  }
+
+  const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text.trim())}&tl=ar&client=tw-ob`;
+
+  try {
+    const ttsResponse = await fetch(ttsUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://translate.google.com/",
+      },
+    });
+
+    if (!ttsResponse.ok) {
+      res.status(502).json({ error: "تعذر الحصول على الصوت" });
+      return;
+    }
+
+    const contentType = ttsResponse.headers.get("content-type") ?? "audio/mpeg";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "no-store");
+
+    const arrayBuffer = await ttsResponse.arrayBuffer();
+    res.send(Buffer.from(arrayBuffer));
+  } catch {
+    res.status(502).json({ error: "تعذر الاتصال بخدمة الصوت" });
+  }
+});
+
 router.post("/suggestions", async (req, res) => {
   const userId = req.session.userId!;
   const parsed = CreateSuggestionBody.safeParse(req.body);

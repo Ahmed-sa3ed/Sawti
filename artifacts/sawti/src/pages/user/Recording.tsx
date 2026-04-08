@@ -31,12 +31,14 @@ export default function UserRecording() {
   const ttsUrlRef = useRef<string | null>(null);
   const ttsAbortRef = useRef<AbortController | null>(null);
 
+  // Filter to only sentences that still need recording (not accepted yet)
+  const pendingSentences = sentences?.filter(s => !s.recordingId || s.recordingStatus === "rejected") ?? [];
+  const currentSentence = pendingSentences[currentIndex] ?? pendingSentences[0];
+
+  // When data first loads, reset index to 0 (pendingSentences already filtered)
   useEffect(() => {
-    if (sentences && currentIndex === 0) {
-      const firstUnrecorded = sentences.findIndex(s => !s.recordingId);
-      if (firstUnrecorded !== -1) setCurrentIndex(firstUnrecorded);
-    }
-  }, [sentences]);
+    if (sentences) setCurrentIndex(0);
+  }, [!!sentences]);
 
   useEffect(() => {
     setAudioBlob(null);
@@ -198,14 +200,13 @@ export default function UserRecording() {
         toast({ title: "تم الإرسال بنجاح" });
         queryClient.invalidateQueries({ queryKey: getGetUserSessionSentencesQueryKey(sid) });
         queryClient.invalidateQueries({ queryKey: getGetUserSessionsQueryKey() });
-        const nextUnrecorded = sentences?.findIndex((s, i) => i > currentIndex && !s.recordingId);
-        if (nextUnrecorded !== undefined && nextUnrecorded !== -1) {
-          setCurrentIndex(nextUnrecorded);
-        } else if (sentences && currentIndex < sentences.length - 1) {
-          setCurrentIndex(currentIndex + 1);
-        } else {
+        // If this was the last pending sentence, mark session done
+        if (pendingSentences.length <= 1) {
           setSessionDone(true);
+        } else if (currentIndex >= pendingSentences.length - 1) {
+          setCurrentIndex(pendingSentences.length - 2);
         }
+        // Otherwise currentIndex stays and the next pending sentence shows after data refresh
       }
     });
   };
@@ -225,9 +226,38 @@ export default function UserRecording() {
     );
   }
 
-  const currentSentence = sentences[currentIndex];
-  const recordedCount = sentences.filter(s => !!s.recordingId).length;
+  const recordedCount = sentences.filter(s => !!s.recordingId && s.recordingStatus !== "rejected").length;
   const total = sentences.length;
+
+  // All sentences accepted → show done screen
+  if (!sessionDone && pendingSentences.length === 0 && total > 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8" dir="rtl">
+        <div className="bg-slate-900 border border-teal-500/30 rounded-3xl p-12 max-w-2xl w-full text-center shadow-[0_0_40px_rgba(20,184,166,0.1)] space-y-6">
+          <div className="w-20 h-20 rounded-full bg-teal-500/20 border border-teal-500/30 flex items-center justify-center mx-auto">
+            <CheckCircle className="h-10 w-10 text-teal-400" />
+          </div>
+          <h2 className="text-3xl font-bold text-slate-50">أحسنت! انتهيت من هذه الجلسة</h2>
+          <p className="text-slate-400 text-lg leading-relaxed">
+            لقد أكملت جميع جمل هذه الجلسة. يمكنك الاستراحة الآن أو الانتقال إلى الجلسة التالية.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
+            <button className="flex items-center gap-2 justify-center px-6 py-3 rounded-full bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 transition-colors font-medium" onClick={() => setLocation("/user")}>
+              <ArrowRight className="h-4 w-4" /> العودة للرئيسية
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentSentence) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-slate-400 text-lg">جاري التحميل...</p>
+      </div>
+    );
+  }
 
   const nextSession = allSessions?.find(s => s.id !== sid && s.recordedCount < s.totalSentences);
 
@@ -313,6 +343,7 @@ export default function UserRecording() {
           <h2 className="text-lg font-medium text-slate-100 truncate">جلسة التسجيل</h2>
         </div>
         <div className="flex items-center gap-4">
+          {/* Overall progress dots (recordedCount / total) */}
           <div className="hidden sm:flex items-center gap-1.5" dir="ltr">
             {[...Array(Math.min(total, 20))].map((_, i) => (
               <div
@@ -320,17 +351,21 @@ export default function UserRecording() {
                 className={`w-1.5 h-1.5 rounded-full transition-colors ${
                   i < recordedCount
                     ? "bg-teal-500"
-                    : i === currentIndex
+                    : i === recordedCount
                     ? "bg-teal-400 animate-pulse"
                     : "bg-slate-700"
                 }`}
               />
             ))}
           </div>
+          {/* Pending counter */}
           <div className="flex items-center gap-2 text-sm text-slate-400 bg-slate-800/50 px-3 py-1.5 rounded-full border border-slate-700/50">
             <span className="font-bold text-teal-400 text-base">{currentIndex + 1}</span>
             <span>من</span>
-            <span>{total}</span>
+            <span>{pendingSentences.length}</span>
+            {currentSentence.recordingStatus === "rejected" && (
+              <span className="text-red-400 font-medium">• مرفوضة</span>
+            )}
           </div>
         </div>
       </header>
@@ -522,23 +557,25 @@ export default function UserRecording() {
 
           </div>
 
-          {/* Previous / Next navigation */}
-          <div className="flex justify-between w-full">
-            <button
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-sm"
-              onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
-              disabled={currentIndex === 0}
-            >
-              <ArrowRight size={16} /> السابق
-            </button>
-            <button
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-sm"
-              onClick={() => setCurrentIndex(Math.min(total - 1, currentIndex + 1))}
-              disabled={currentIndex === total - 1}
-            >
-              التالي <ArrowRight size={16} className="rotate-180" />
-            </button>
-          </div>
+          {/* Previous / Next navigation within pending sentences */}
+          {pendingSentences.length > 1 && (
+            <div className="flex justify-between w-full">
+              <button
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-sm"
+                onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
+                disabled={currentIndex === 0}
+              >
+                <ArrowRight size={16} /> السابق
+              </button>
+              <button
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-sm"
+                onClick={() => setCurrentIndex(Math.min(pendingSentences.length - 1, currentIndex + 1))}
+                disabled={currentIndex === pendingSentences.length - 1}
+              >
+                التالي <ArrowRight size={16} className="rotate-180" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

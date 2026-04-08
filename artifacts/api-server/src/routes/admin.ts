@@ -13,6 +13,7 @@ import { eq, and, sql, inArray } from "drizzle-orm";
 import archiver from "archiver";
 import fs from "fs";
 import path from "path";
+import multer from "multer";
 import {
   AdminCreateUserBody,
   AdminCreateSessionBody,
@@ -29,7 +30,117 @@ import { requireAdmin } from "../middlewares/auth.js";
 
 const router = Router();
 
+const fileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+});
+
+function shuffleArray<T>(arr: T[]): T[] {
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+async function parseSentencesFromFile(buffer: Buffer, ext: string): Promise<string[]> {
+  let rawText = "";
+
+  if (ext === ".txt") {
+    rawText = buffer.toString("utf-8");
+  } else if (ext === ".csv") {
+    rawText = buffer.toString("utf-8");
+    return rawText
+      .split("\n")
+      .map((line) => {
+        const cols = line.split(",");
+        return cols[0].replace(/^"|"$/g, "").trim();
+      })
+      .filter((s) => s.length > 3);
+  } else if (ext === ".pdf") {
+    const pdfParse = (await import("pdf-parse")).default;
+    const data = await pdfParse(buffer);
+    rawText = data.text;
+  } else if (ext === ".docx") {
+    const mammoth = await import("mammoth");
+    const result = await mammoth.extractRawText({ buffer });
+    rawText = result.value;
+  }
+
+  return rawText
+    .split("\n")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 3);
+}
+
 router.use(requireAdmin);
+
+router.post("/bulk-upload", fileUpload.single("file"), async (req, res) => {
+  const file = req.file;
+  if (!file) {
+    res.status(400).json({ error: "يجب رفع ملف" });
+    return;
+  }
+
+  const ext = path.extname(file.originalname).toLowerCase();
+  const allowed = [".txt", ".csv", ".pdf", ".docx"];
+  if (!allowed.includes(ext)) {
+    res.status(400).json({ error: "نوع الملف غير مدعوم. المقبول: .txt .csv .pdf .docx" });
+    return;
+  }
+
+  let parsed: string[];
+  try {
+    parsed = await parseSentencesFromFile(file.buffer, ext);
+  } catch (err) {
+    res.status(422).json({ error: "تعذر قراءة الملف أو استخراج الجمل منه" });
+    return;
+  }
+
+  const uniqueSentences = [...new Set(parsed)];
+  if (uniqueSentences.length === 0) {
+    res.status(400).json({ error: "لم يتم العثور على جمل في الملف" });
+    return;
+  }
+
+  const MAX_PER_SESSION = 50;
+
+  const existingSessions = await db.select({ id: sessionsTable.id }).from(sessionsTable);
+  let sessionNumber = existingSessions.length + 1;
+
+  const createdSessionIds: number[] = [];
+
+  for (let copy = 0; copy < 3; copy++) {
+    const shuffled = shuffleArray(uniqueSentences);
+    for (let i = 0; i < shuffled.length; i += MAX_PER_SESSION) {
+      const chunk = shuffled.slice(i, i + MAX_PER_SESSION);
+
+      const [newSession] = await db
+        .insert(sessionsTable)
+        .values({ name: `جلسة ${sessionNumber}`, description: null })
+        .returning();
+
+      sessionNumber++;
+
+      const values = chunk.map((text, idx) => ({
+        text,
+        sessionId: newSession.id,
+        orderIndex: idx + 1,
+      }));
+
+      await db.insert(sentencesTable).values(values);
+      createdSessionIds.push(newSession.id);
+    }
+  }
+
+  res.status(201).json({
+    message: `تم إنشاء ${createdSessionIds.length} جلسة بنجاح`,
+    sessionsCreated: createdSessionIds.length,
+    uniqueSentences: uniqueSentences.length,
+    totalSentences: uniqueSentences.length * 3,
+  });
+});
 
 router.get("/users", async (req, res) => {
   const users = await db.select().from(usersTable);

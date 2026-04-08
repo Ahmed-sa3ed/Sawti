@@ -386,6 +386,67 @@ router.get("/sessions", async (req, res) => {
   res.json(filteredSessions);
 });
 
+router.get("/sessions/:sessionId/sentences", async (req, res) => {
+  const sessionId = parseInt(req.params.sessionId);
+  if (isNaN(sessionId)) { res.status(400).json({ error: "معرف غير صالح" }); return; }
+
+  const sentences = await db
+    .select()
+    .from(sentencesTable)
+    .where(eq(sentencesTable.sessionId, sessionId));
+
+  res.json(sentences.map(s => ({
+    id: s.id,
+    text: s.text,
+    orderIndex: s.orderIndex,
+    assignedUserId: s.assignedUserId,
+  })));
+});
+
+router.patch("/sessions/:sessionId", async (req, res) => {
+  const sessionId = parseInt(req.params.sessionId);
+  if (isNaN(sessionId)) { res.status(400).json({ error: "معرف غير صالح" }); return; }
+
+  const { name } = req.body as { name?: string };
+  if (!name || name.trim().length === 0) {
+    res.status(400).json({ error: "اسم الجلسة مطلوب" });
+    return;
+  }
+
+  const updated = await db
+    .update(sessionsTable)
+    .set({ name: name.trim() })
+    .where(eq(sessionsTable.id, sessionId))
+    .returning();
+
+  if (updated.length === 0) { res.status(404).json({ error: "الجلسة غير موجودة" }); return; }
+  res.json({ id: updated[0].id, name: updated[0].name });
+});
+
+router.delete("/sessions/:sessionId", async (req, res) => {
+  const sessionId = parseInt(req.params.sessionId);
+  if (isNaN(sessionId)) { res.status(400).json({ error: "معرف غير صالح" }); return; }
+
+  // Delete recording files on disk
+  const recordings = await db
+    .select()
+    .from(recordingsTable)
+    .where(eq(recordingsTable.sessionId, sessionId));
+
+  for (const rec of recordings) {
+    if (rec.filePath && fs.existsSync(rec.filePath)) {
+      try { fs.unlinkSync(rec.filePath); } catch { /* ignore */ }
+    }
+  }
+
+  await db.delete(recordingsTable).where(eq(recordingsTable.sessionId, sessionId));
+  await db.delete(userSessionsTable).where(eq(userSessionsTable.sessionId, sessionId));
+  await db.delete(sentencesTable).where(eq(sentencesTable.sessionId, sessionId));
+  await db.delete(sessionsTable).where(eq(sessionsTable.id, sessionId));
+
+  res.json({ ok: true });
+});
+
 router.post("/sessions", async (req, res) => {
   const parsed = AdminCreateSessionBody.safeParse(req.body);
   if (!parsed.success) {

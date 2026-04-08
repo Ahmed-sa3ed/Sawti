@@ -110,7 +110,7 @@ export default function AdminSessions() {
     try {
       const res = await fetch(`/api/admin/sessions/${sessionId}/sentences`, { credentials: "include" });
       const data = await res.json();
-      setSentencesMap(prev => ({ ...prev, [sessionId]: data }));
+      setSentencesMap(prev => ({ ...prev, [sessionId]: Array.isArray(data) ? data : [] }));
     } catch {
       toast({ title: "تعذر تحميل الجمل", variant: "destructive" });
     } finally {
@@ -127,7 +127,7 @@ export default function AdminSessions() {
     if (!editSession || !editName.trim()) return;
     setEditSaving(true);
     try {
-      const res = await fetch(`/api/admin/sessions/${editSession.id}`, {
+    const res = await fetch(`/api/admin/sessions/${editSession.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: editName.trim() }),
@@ -387,7 +387,7 @@ export default function AdminSessions() {
                   : 0;
                 const isExpanded = expandedSessionId === session.id;
                 const isLoadingThis = loadingSentences === session.id;
-                const sentences = sentencesMap[session.id];
+                const sessionSentences = sentencesMap[session.id];
 
                 return (
                   <Fragment key={session.id}>
@@ -453,7 +453,7 @@ export default function AdminSessions() {
                             <div className="flex items-center justify-between mb-3">
                               <h4 className="font-semibold text-sm text-foreground flex items-center gap-2">
                                 <Eye className="h-4 w-4 text-primary" />
-                                جمل الجلسة ({sentences?.length ?? 0})
+                                جمل الجلسة ({sessionSentences?.length ?? 0})
                               </h4>
                               <button
                                 onClick={() => setExpandedSessionId(null)}
@@ -462,15 +462,15 @@ export default function AdminSessions() {
                                 <X className="h-4 w-4" />
                               </button>
                             </div>
-                            {!sentences ? (
+                            {!sessionSentences ? (
                               <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
                                 <Loader2 className="h-4 w-4 animate-spin" /> جاري التحميل...
                               </div>
-                            ) : sentences.length === 0 ? (
+                            ) : sessionSentences.length === 0 ? (
                               <p className="text-muted-foreground text-sm py-4">لا توجد جمل في هذه الجلسة</p>
                             ) : (
                               <div className="max-h-64 overflow-y-auto space-y-1.5 pl-1">
-                                {sentences.map((s, idx) => (
+                                {sessionSentences.map((s, idx) => (
                                   <div key={s.id} className="flex items-start gap-3 text-sm py-1.5 border-b border-border/50 last:border-0">
                                     <span className="text-muted-foreground font-mono text-xs pt-0.5 min-w-[2rem]">{idx + 1}.</span>
                                     <span className="text-foreground leading-relaxed">{s.text}</span>

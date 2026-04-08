@@ -5,22 +5,17 @@ import bcrypt from "bcrypt";
 
 async function seed() {
   const adminUsername = process.env.SEED_ADMIN_USERNAME ?? "admin";
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "admin123";
+  const userUsername = process.env.SEED_USER_USERNAME ?? "user";
+  const userPassword = process.env.SEED_USER_PASSWORD ?? "user123";
 
-  if (!adminPassword) {
-    console.error(
-      "SEED_ADMIN_PASSWORD environment variable is required to run the seed script."
-    );
-    process.exit(1);
-  }
-
-  const existing = await db
+  const existingAdmin = await db
     .select()
     .from(usersTable)
     .where(eq(usersTable.username, adminUsername))
     .limit(1);
 
-  if (existing.length === 0) {
+  if (existingAdmin.length === 0) {
     const passwordHash = await bcrypt.hash(adminPassword, 10);
     await db.insert(usersTable).values({
       username: adminUsername,
@@ -30,6 +25,24 @@ async function seed() {
     console.log(`Admin user created: ${adminUsername}`);
   } else {
     console.log("Admin user already exists");
+  }
+
+  const existingUser = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.username, userUsername))
+    .limit(1);
+
+  if (existingUser.length === 0) {
+    const passwordHash = await bcrypt.hash(userPassword, 10);
+    await db.insert(usersTable).values({
+      username: userUsername,
+      passwordHash,
+      role: "user",
+    });
+    console.log(`Starter user created: ${userUsername}`);
+  } else {
+    console.log("Starter user already exists");
   }
 }
 

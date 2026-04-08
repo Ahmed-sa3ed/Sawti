@@ -4,6 +4,10 @@ import pinoHttp from "pino-http";
 import session from "express-session";
 import router from "./routes/index.js";
 import { logger } from "./lib/logger.js";
+import { db } from "@workspace/db";
+import { usersTable } from "@workspace/db";
+import bcrypt from "bcrypt";
+import { eq } from "drizzle-orm";
 
 declare module "express-session" {
   interface SessionData {
@@ -108,5 +112,48 @@ app.use(
 );
 
 app.use("/api", router);
+
+async function ensureSeedUsers() {
+  if (process.env.NODE_ENV !== "production") return;
+
+  const adminUsername = process.env.SEED_ADMIN_USERNAME ?? "admin";
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "admin123";
+  const userUsername = process.env.SEED_USER_USERNAME ?? "user";
+  const userPassword = process.env.SEED_USER_PASSWORD ?? "user123";
+
+  const adminExists = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.username, adminUsername))
+    .limit(1);
+
+  if (adminExists.length === 0) {
+    const passwordHash = await bcrypt.hash(adminPassword, 10);
+    await db.insert(usersTable).values({
+      username: adminUsername,
+      passwordHash,
+      role: "admin",
+    });
+    logger.info({ username: adminUsername }, "Seeded admin user");
+  }
+
+  const userExists = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.username, userUsername))
+    .limit(1);
+
+  if (userExists.length === 0) {
+    const passwordHash = await bcrypt.hash(userPassword, 10);
+    await db.insert(usersTable).values({
+      username: userUsername,
+      passwordHash,
+      role: "user",
+    });
+    logger.info({ username: userUsername }, "Seeded starter user");
+  }
+}
+
+ensureSeedUsers().catch((err) => logger.error({ err }, "Failed to seed default users"));
 
 export default app;

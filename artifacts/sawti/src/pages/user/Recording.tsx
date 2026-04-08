@@ -182,6 +182,9 @@ export default function UserRecording() {
     return s.recordedCount < s.totalSentences;
   });
 
+  const isInIframe = window !== window.top;
+  const fullPageUrl = `${window.location.origin}${window.location.pathname}`;
+
   if (sessionDone) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center max-w-2xl mx-auto w-full text-center" dir="rtl">
@@ -208,6 +211,25 @@ export default function UserRecording() {
 
   return (
     <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full" dir="rtl">
+      {isInIframe && (
+        <div className="mb-4 bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-center justify-between gap-4" dir="rtl">
+          <div className="flex items-center gap-3">
+            <Volume2 className="h-5 w-5 text-amber-600 flex-shrink-0" />
+            <p className="text-sm text-amber-800">
+              <strong>ملاحظة:</strong> لا يمكن تشغيل الصوت أو استخدام الميكروفون داخل نافذة المعاينة.
+            </p>
+          </div>
+          <a
+            href={fullPageUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-shrink-0 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
+          >
+            فتح في نافذة جديدة ↗
+          </a>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-primary">تسجيل الجلسة</h1>

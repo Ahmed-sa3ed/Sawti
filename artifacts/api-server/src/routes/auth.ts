@@ -37,7 +37,15 @@ router.post("/login", async (req, res) => {
   req.session.userId = user.id;
   req.session.role = user.role;
 
-  res.json({ id: user.id, username: user.username, role: user.role });
+  // Explicitly save the session before responding so the Set-Cookie header
+  // is guaranteed to be included in the response (avoids async timing issues).
+  req.session.save((err) => {
+    if (err) {
+      res.status(500).json({ error: "خطأ في حفظ الجلسة" });
+      return;
+    }
+    res.json({ id: user.id, username: user.username, role: user.role });
+  });
 });
 
 router.post("/logout", (req, res) => {

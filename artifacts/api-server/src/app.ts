@@ -14,6 +14,12 @@ declare module "express-session" {
 
 const app: Express = express();
 
+// Trust the first proxy (Replit's edge / TLS terminator).
+// Without this, req.secure is false (HTTP internally) even though
+// the browser connected over HTTPS, and express-session refuses to
+// send the Secure session cookie, breaking auth in production.
+app.set("trust proxy", 1);
+
 app.use(
   pinoHttp({
     logger,

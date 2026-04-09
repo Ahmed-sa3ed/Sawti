@@ -7,26 +7,59 @@ import { AlertTriangle, CheckCircle2, MessageSquarePlus } from "lucide-react";
 import { useState } from "react";
 
 const suggestionSchema = z.object({
-  text: z.string().min(5, "النص يجب أن يكون 5 أحرف على الأقل"),
+  text: z.string().min(1, "النص مطلوب"),
 });
+
+type SubmitResult = {
+  submitted: number;
+  duplicates: number;
+  errors: number;
+};
 
 export default function UserSuggest() {
   const createSuggestion = useCreateSuggestion();
-  const [result, setResult] = useState<{ isDuplicate?: boolean; success?: boolean } | null>(null);
+  const [result, setResult] = useState<SubmitResult | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<z.infer<typeof suggestionSchema>>({
     resolver: zodResolver(suggestionSchema),
     defaultValues: { text: "" },
   });
 
-  const onSubmit = (values: z.infer<typeof suggestionSchema>) => {
+  const onSubmit = async (values: z.infer<typeof suggestionSchema>) => {
+    const lines = values.text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length >= 3);
+
+    if (lines.length === 0) {
+      form.setError("text", { message: "يجب أن تحتوي على جملة واحدة على الأقل (3 أحرف فأكثر)" });
+      return;
+    }
+
     setResult(null);
-    createSuggestion.mutate({ data: values }, {
-      onSuccess: (data) => {
-        setResult({ isDuplicate: data.isDuplicate, success: true });
-        if (!data.isDuplicate) form.reset();
+    setIsSubmitting(true);
+
+    let submitted = 0;
+    let duplicates = 0;
+    let errors = 0;
+
+    for (const line of lines) {
+      try {
+        const data = await createSuggestion.mutateAsync({ data: { text: line } });
+        if (data.isDuplicate) {
+          duplicates++;
+        } else {
+          submitted++;
+        }
+      } catch {
+        errors++;
       }
-    });
+    }
+
+    setIsSubmitting(false);
+    setResult({ submitted, duplicates, errors });
+    if (submitted > 0) form.reset();
   };
 
   return (
@@ -43,8 +76,8 @@ export default function UserSuggest() {
               <MessageSquarePlus size={18} className="text-teal-400" />
             </div>
             <div>
-              <h2 className="text-slate-100 font-medium">لديك جملة مفيدة؟</h2>
-              <p className="text-slate-500 text-sm">أضف جملة عربية سليمة واضحة لتُستخدم في التسجيل</p>
+              <h2 className="text-slate-100 font-medium">لديك جمل مفيدة؟</h2>
+              <p className="text-slate-500 text-sm">أضف جملة أو أكثر، كل سطر يُعدّ جملة منفصلة</p>
             </div>
           </div>
 
@@ -55,40 +88,47 @@ export default function UserSuggest() {
                 name="text"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-slate-300 font-medium">نص الجملة</FormLabel>
+                    <FormLabel className="text-slate-300 font-medium">نص الجمل</FormLabel>
                     <FormControl>
                       <textarea
                         {...field}
-                        rows={4}
+                        rows={6}
                         className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-lg placeholder:text-slate-600 focus:outline-none focus:border-teal-500/60 focus:ring-1 focus:ring-teal-500/30 transition-colors resize-none"
-                        placeholder="اكتب جملة عربية واضحة هنا..."
+                        placeholder={"اكتب جملة عربية واضحة هنا...\nأو أضف أكثر من جملة، كل جملة في سطر"}
                       />
                     </FormControl>
+                    <p className="text-xs text-slate-500 mt-1">كل سطر سيتم إرساله كجملة مستقلة</p>
                     <FormMessage className="text-red-400" />
                   </FormItem>
                 )}
               />
 
-              {result?.success && !result.isDuplicate && (
+              {result && result.submitted > 0 && (
                 <div className="flex items-center gap-3 px-4 py-3 bg-teal-900/30 border border-teal-500/30 rounded-xl text-teal-300">
                   <CheckCircle2 size={18} className="text-teal-400 flex-shrink-0" />
-                  <span className="text-sm font-medium">تم إرسال اقتراحك بنجاح! شكراً لك.</span>
+                  <span className="text-sm font-medium">
+                    تم إرسال {result.submitted} جملة بنجاح!{" "}
+                    {result.duplicates > 0 && `(${result.duplicates} مكررة)`}{" "}
+                    {result.errors > 0 && `(${result.errors} فشل)`}
+                  </span>
                 </div>
               )}
 
-              {result?.isDuplicate && (
+              {result && result.submitted === 0 && result.duplicates > 0 && (
                 <div className="flex items-center gap-3 px-4 py-3 bg-red-900/20 border border-red-500/30 rounded-xl text-red-300">
                   <AlertTriangle size={18} className="text-red-400 flex-shrink-0" />
-                  <span className="text-sm font-medium">عذراً، هذه الجملة موجودة مسبقاً في قاعدة البيانات.</span>
+                  <span className="text-sm font-medium">
+                    جميع الجمل موجودة مسبقاً في قاعدة البيانات ({result.duplicates} جملة مكررة).
+                  </span>
                 </div>
               )}
 
               <button
                 type="submit"
-                disabled={createSuggestion.isPending}
+                disabled={isSubmitting}
                 className="w-full py-3 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-lg transition-all shadow-[0_0_20px_rgba(20,184,166,0.3)] hover:shadow-[0_0_30px_rgba(20,184,166,0.5)] disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {createSuggestion.isPending ? "جاري الإرسال..." : "إرسال الاقتراح"}
+                {isSubmitting ? "جاري الإرسال..." : "إرسال الاقتراحات"}
               </button>
             </form>
           </Form>

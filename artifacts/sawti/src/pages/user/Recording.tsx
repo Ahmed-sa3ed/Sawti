@@ -194,10 +194,11 @@ export default function UserRecording() {
 
   const submit = () => {
     if (!audioBlob || !currentSentence) return;
-    const audioFile = new File([audioBlob], "recording.webm", { type: audioBlob.type });
+    const audioFile = new File([audioBlob], "recording.webm", { type: audioBlob.type || "audio/webm" });
     submitRecording.mutate({ data: { sentenceId: currentSentence.id, sessionId: sid, audio: audioFile } }, {
       onSuccess: () => {
-        toast({ title: "تم الإرسال بنجاح" });
+        toast({ title: "تم الإرسال بنجاح ✓" });
+        setAudioBlob(null);
         queryClient.invalidateQueries({ queryKey: getGetUserSessionSentencesQueryKey(sid) });
         queryClient.invalidateQueries({ queryKey: getGetUserSessionsQueryKey() });
         // If this was the last pending sentence, mark session done
@@ -207,7 +208,12 @@ export default function UserRecording() {
           setCurrentIndex(pendingSentences.length - 2);
         }
         // Otherwise currentIndex stays and the next pending sentence shows after data refresh
-      }
+      },
+      onError: (err: unknown) => {
+        const message =
+          err instanceof Error ? err.message : "حدث خطأ أثناء الإرسال، يرجى المحاولة مجدداً";
+        toast({ title: "فشل الإرسال", description: message, variant: "destructive" });
+      },
     });
   };
 

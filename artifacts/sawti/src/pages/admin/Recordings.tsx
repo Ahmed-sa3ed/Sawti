@@ -13,6 +13,7 @@ export default function AdminRecordings() {
   
   const queryParams = statusFilter !== "all" ? { status: statusFilter } : {};
   const { data: recordings, isLoading } = useAdminListRecordings(queryParams);
+  const { data: pendingRecordings } = useAdminListRecordings({ status: "pending" });
   const updateStatus = useAdminUpdateRecordingStatus();
   const acceptAll = useAdminAcceptAllRecordings();
   const queryClient = useQueryClient();
@@ -61,7 +62,7 @@ export default function AdminRecordings() {
   };
 
   const handleAcceptAll = () => {
-    const pending = recordings?.filter(r => r.status === "pending") ?? [];
+    const pending = pendingRecordings ?? [];
     if (pending.length === 0) return;
     if (!confirm(`هل أنت متأكد من قبول ${pending.length} تسجيل معلق؟`)) return;
     acceptAll.mutate(undefined, {
@@ -80,7 +81,7 @@ export default function AdminRecordings() {
 
   if (isLoading) return <div>جاري التحميل...</div>;
 
-  const pendingCount = recordings?.filter(r => r.status === "pending").length ?? 0;
+  const pendingCount = pendingRecordings?.length ?? 0;
 
   return (
     <div className="space-y-6" dir="rtl">
@@ -88,7 +89,7 @@ export default function AdminRecordings() {
         <h1 className="text-3xl font-bold text-primary">التسجيلات</h1>
         
         <div className="flex items-center gap-3">
-          {statusFilter === "pending" && pendingCount > 0 && (
+          {pendingCount > 0 && (
             <Button
               variant="outline"
               className="gap-2 border-green-300 text-green-700 hover:bg-green-50"
@@ -96,7 +97,7 @@ export default function AdminRecordings() {
               disabled={acceptAll.isPending}
             >
               <CheckCheck className="h-4 w-4" />
-              قبول الكل ({pendingCount})
+              {acceptAll.isPending ? "جاري القبول..." : `قبول الكل (${pendingCount})`}
             </Button>
           )}
           <div className="w-64">

@@ -719,6 +719,69 @@ router.patch("/suggestions/:suggestionId", async (req, res) => {
   res.json({ message: "تم تحديث حالة الاقتراح" });
 });
 
+router.post("/suggestions/accept-all", async (req, res) => {
+  // Fetch all pending non-duplicate suggestions
+  const pending = await db
+    .select()
+    .from(suggestionsTable)
+    .where(
+      and(
+        sql`${suggestionsTable.isApproved} IS NULL`,
+        eq(suggestionsTable.isDuplicate, false)
+      )
+    );
+
+  if (pending.length === 0) {
+    res.json({ message: "لا توجد اقتراحات بانتظار الموافقة", sessionsCreated: 0, uniqueSentences: 0 });
+    return;
+  }
+
+  // Mark all as approved
+  const pendingIds = pending.map((s) => s.id);
+  await db
+    .update(suggestionsTable)
+    .set({ isApproved: true })
+    .where(inArray(suggestionsTable.id, pendingIds));
+
+  // Run the same triplication + session creation algorithm as bulk-upload
+  const uniqueSentences = [...new Set(pending.map((s) => s.text.trim()).filter((t) => t.length > 3))];
+
+  const MAX_PER_SESSION = 50;
+  const existingSessions = await db.select({ id: sessionsTable.id }).from(sessionsTable);
+  let sessionNumber = existingSessions.length + 1;
+  const createdSessionIds: number[] = [];
+
+  for (let copy = 0; copy < 3; copy++) {
+    const shuffled = shuffleArray(uniqueSentences);
+    for (let i = 0; i < shuffled.length; i += MAX_PER_SESSION) {
+      const chunk = shuffled.slice(i, i + MAX_PER_SESSION);
+
+      const [newSession] = await db
+        .insert(sessionsTable)
+        .values({ name: `جلسة ${sessionNumber}`, description: null })
+        .returning();
+
+      sessionNumber++;
+
+      const values = chunk.map((text, idx) => ({
+        text,
+        sessionId: newSession.id,
+        orderIndex: idx + 1,
+      }));
+
+      await db.insert(sentencesTable).values(values);
+      createdSessionIds.push(newSession.id);
+    }
+  }
+
+  res.status(201).json({
+    message: `تم قبول ${pending.length} اقتراح وإنشاء ${createdSessionIds.length} جلسة`,
+    sessionsCreated: createdSessionIds.length,
+    uniqueSentences: uniqueSentences.length,
+    approvedSuggestions: pending.length,
+  });
+});
+
 router.get("/dashboard", async (req, res) => {
   const [totalUsersResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(usersTable);
   const [totalSessionsResult] = await db.select({ count: sql<number>`COUNT(*)` }).from(sessionsTable);

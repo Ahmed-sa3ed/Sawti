@@ -1,18 +1,22 @@
-import { useAdminListSuggestions, useAdminUpdateSuggestion, getAdminListSuggestionsQueryKey } from "@workspace/api-client-react";
+import { useAdminListSuggestions, useAdminUpdateSuggestion, getAdminListSuggestionsQueryKey, getAdminGetDashboardQueryKey, getAdminListSessionsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Check, X, AlertTriangle } from "lucide-react";
+import { Check, X, AlertTriangle, CheckCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
 
 export default function AdminSuggestions() {
   const { data: suggestions, isLoading } = useAdminListSuggestions();
   const updateSuggestion = useAdminUpdateSuggestion();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [isAcceptingAll, setIsAcceptingAll] = useState(false);
 
   if (isLoading) return <div>جاري التحميل...</div>;
+
+  const pendingCount = suggestions?.filter((s) => s.isApproved === null && !s.isDuplicate).length ?? 0;
 
   const handleUpdate = (id: number, isApproved: boolean) => {
     updateSuggestion.mutate({ suggestionId: id, data: { isApproved } }, {
@@ -23,9 +27,48 @@ export default function AdminSuggestions() {
     });
   };
 
+  const handleAcceptAll = async () => {
+    if (pendingCount === 0) return;
+    if (!confirm(`هل أنت متأكد من قبول ${pendingCount} اقتراح وتحويلها إلى جلسات تسجيل؟`)) return;
+
+    setIsAcceptingAll(true);
+    try {
+      const res = await fetch("/api/admin/suggestions/accept-all", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "فشل في قبول الاقتراحات");
+
+      queryClient.invalidateQueries({ queryKey: getAdminListSuggestionsQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getAdminGetDashboardQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getAdminListSessionsQueryKey() });
+      toast({ title: data.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "حدث خطأ غير متوقع";
+      toast({ title: "فشل العملية", description: msg, variant: "destructive" });
+    } finally {
+      setIsAcceptingAll(false);
+    }
+  };
+
   return (
     <div className="space-y-6" dir="rtl">
-      <h1 className="text-3xl font-bold text-primary">الاقتراحات</h1>
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold text-primary">الاقتراحات</h1>
+
+        {pendingCount > 0 && (
+          <Button
+            variant="outline"
+            className="gap-2 border-green-300 text-green-700 hover:bg-green-50"
+            onClick={handleAcceptAll}
+            disabled={isAcceptingAll}
+          >
+            <CheckCheck className="h-4 w-4" />
+            {isAcceptingAll ? "جاري القبول..." : `قبول الكل وإنشاء جلسات (${pendingCount})`}
+          </Button>
+        )}
+      </div>
 
       <div className="border rounded-md">
         <Table>

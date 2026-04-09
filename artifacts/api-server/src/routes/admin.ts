@@ -9,7 +9,8 @@ import {
   recordingsTable,
   suggestionsTable,
 } from "@workspace/db";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { eq, and, sql, inArray, isNull, or } from "drizzle-orm";
+import { logger } from "../lib/logger.js";
 import archiver from "archiver";
 import fs from "fs";
 import path from "path";
@@ -720,66 +721,94 @@ router.patch("/suggestions/:suggestionId", async (req, res) => {
 });
 
 router.post("/suggestions/accept-all", async (req, res) => {
-  // Fetch all pending non-duplicate suggestions
-  const pending = await db
-    .select()
-    .from(suggestionsTable)
-    .where(
-      and(
-        sql`${suggestionsTable.isApproved} IS NULL`,
-        eq(suggestionsTable.isDuplicate, false)
-      )
-    );
+  try {
+    // 1. Find all non-duplicate suggestions that haven't been rejected
+    //    (includes both pending (isApproved IS NULL) and already individually approved (isApproved = true))
+    const toProcess = await db
+      .select()
+      .from(suggestionsTable)
+      .where(
+        and(
+          eq(suggestionsTable.isDuplicate, false),
+          or(isNull(suggestionsTable.isApproved), eq(suggestionsTable.isApproved, true))
+        )
+      );
 
-  if (pending.length === 0) {
-    res.json({ message: "لا توجد اقتراحات بانتظار الموافقة", sessionsCreated: 0, uniqueSentences: 0 });
-    return;
-  }
-
-  // Mark all as approved
-  const pendingIds = pending.map((s) => s.id);
-  await db
-    .update(suggestionsTable)
-    .set({ isApproved: true })
-    .where(inArray(suggestionsTable.id, pendingIds));
-
-  // Run the same triplication + session creation algorithm as bulk-upload
-  const uniqueSentences = [...new Set(pending.map((s) => s.text.trim()).filter((t) => t.length > 3))];
-
-  const MAX_PER_SESSION = 50;
-  const existingSessions = await db.select({ id: sessionsTable.id }).from(sessionsTable);
-  let sessionNumber = existingSessions.length + 1;
-  const createdSessionIds: number[] = [];
-
-  for (let copy = 0; copy < 3; copy++) {
-    const shuffled = shuffleArray(uniqueSentences);
-    for (let i = 0; i < shuffled.length; i += MAX_PER_SESSION) {
-      const chunk = shuffled.slice(i, i + MAX_PER_SESSION);
-
-      const [newSession] = await db
-        .insert(sessionsTable)
-        .values({ name: `جلسة ${sessionNumber}`, description: null })
-        .returning();
-
-      sessionNumber++;
-
-      const values = chunk.map((text, idx) => ({
-        text,
-        sessionId: newSession.id,
-        orderIndex: idx + 1,
-      }));
-
-      await db.insert(sentencesTable).values(values);
-      createdSessionIds.push(newSession.id);
+    if (toProcess.length === 0) {
+      res.json({ message: "لا توجد اقتراحات صالحة لإنشاء جلسات منها", sessionsCreated: 0, uniqueSentences: 0 });
+      return;
     }
-  }
 
-  res.status(201).json({
-    message: `تم قبول ${pending.length} اقتراح وإنشاء ${createdSessionIds.length} جلسة`,
-    sessionsCreated: createdSessionIds.length,
-    uniqueSentences: uniqueSentences.length,
-    approvedSuggestions: pending.length,
-  });
+    // 2. Mark all still-pending ones as approved
+    const pendingIds = toProcess.filter((s) => s.isApproved === null).map((s) => s.id);
+    if (pendingIds.length > 0) {
+      await db
+        .update(suggestionsTable)
+        .set({ isApproved: true })
+        .where(inArray(suggestionsTable.id, pendingIds));
+    }
+
+    // 3. Collect unique texts — skip any text that already exists in the sentences table
+    //    (prevents duplicating sessions if Accept All is called more than once)
+    const existingSentenceRows = await db
+      .select({ text: sentencesTable.text })
+      .from(sentencesTable);
+    const existingTexts = new Set(existingSentenceRows.map((s) => s.text.toLowerCase()));
+
+    const candidateTexts = [...new Set(
+      toProcess.map((s) => s.text.trim()).filter((t) => t.length > 3)
+    )];
+    const uniqueSentences = candidateTexts.filter((t) => !existingTexts.has(t.toLowerCase()));
+
+    if (uniqueSentences.length === 0) {
+      res.json({
+        message: `تمت الموافقة على ${pendingIds.length} اقتراح، لكن جميع النصوص موجودة بالفعل في الجلسات`,
+        sessionsCreated: 0,
+        uniqueSentences: 0,
+        approvedSuggestions: pendingIds.length,
+      });
+      return;
+    }
+
+    // 4. Triplication + session creation (same algorithm as bulk-upload)
+    const MAX_PER_SESSION = 50;
+    const existingSessions = await db.select({ id: sessionsTable.id }).from(sessionsTable);
+    let sessionNumber = existingSessions.length + 1;
+    const createdSessionIds: number[] = [];
+
+    for (let copy = 0; copy < 3; copy++) {
+      const shuffled = shuffleArray(uniqueSentences);
+      for (let i = 0; i < shuffled.length; i += MAX_PER_SESSION) {
+        const chunk = shuffled.slice(i, i + MAX_PER_SESSION);
+
+        const [newSession] = await db
+          .insert(sessionsTable)
+          .values({ name: `جلسة ${sessionNumber}`, description: null })
+          .returning();
+
+        sessionNumber++;
+
+        const values = chunk.map((text, idx) => ({
+          text,
+          sessionId: newSession.id,
+          orderIndex: idx + 1,
+        }));
+
+        await db.insert(sentencesTable).values(values);
+        createdSessionIds.push(newSession.id);
+      }
+    }
+
+    res.status(201).json({
+      message: `تم قبول ${pendingIds.length} اقتراح وإنشاء ${createdSessionIds.length} جلسة`,
+      sessionsCreated: createdSessionIds.length,
+      uniqueSentences: uniqueSentences.length,
+      approvedSuggestions: pendingIds.length,
+    });
+  } catch (err) {
+    logger.error({ err }, "accept-all suggestions failed");
+    res.status(500).json({ error: "حدث خطأ أثناء معالجة الاقتراحات" });
+  }
 });
 
 router.get("/dashboard", async (req, res) => {

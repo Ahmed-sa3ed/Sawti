@@ -11,12 +11,13 @@ import { eq, and, inArray } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { execFile } from "child_process";
+import { exec } from "child_process";
 import { promisify } from "util";
 import { CreateSuggestionBody } from "@workspace/api-zod";
 import { requireUser } from "../middlewares/auth.js";
+import { logger } from "../lib/logger.js";
 
-const execFileAsync = promisify(execFile);
+const execAsync = promisify(exec);
 
 const router = Router();
 router.use(requireUser);
@@ -39,17 +40,16 @@ async function convertToWav16kMono(inputBuffer: Buffer, inputMimeType: string): 
   fs.writeFileSync(inputPath, inputBuffer);
 
   try {
-    await execFileAsync("ffmpeg", [
-      "-y",
-      "-i", inputPath,
-      "-ar", "16000",
-      "-ac", "1",
-      "-acodec", "pcm_s16le",
-      outputPath,
-    ]);
+    // Use exec (shell-based) so ffmpeg is resolved via the shell's PATH (Nix environment)
+    const cmd = `ffmpeg -y -i ${JSON.stringify(inputPath)} -ar 16000 -ac 1 -acodec pcm_s16le ${JSON.stringify(outputPath)}`;
+    const { stderr } = await execAsync(cmd);
+    if (stderr) logger.debug({ stderr }, "ffmpeg stderr");
 
     const wavBuffer = fs.readFileSync(outputPath);
     return wavBuffer;
+  } catch (err) {
+    logger.error({ err, inputMimeType }, "ffmpeg conversion failed");
+    throw err;
   } finally {
     if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
     if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);

@@ -748,21 +748,14 @@ router.post("/suggestions/accept-all", async (req, res) => {
         .where(inArray(suggestionsTable.id, pendingIds));
     }
 
-    // 3. Collect unique texts — skip any text that already exists in the sentences table
-    //    (prevents duplicating sessions if Accept All is called more than once)
-    const existingSentenceRows = await db
-      .select({ text: sentencesTable.text })
-      .from(sentencesTable);
-    const existingTexts = new Set(existingSentenceRows.map((s) => s.text.toLowerCase()));
-
-    const candidateTexts = [...new Set(
+    // 3. Collect unique texts from the current batch of suggestions
+    const uniqueSentences = [...new Set(
       toProcess.map((s) => s.text.trim()).filter((t) => t.length > 3)
     )];
-    const uniqueSentences = candidateTexts.filter((t) => !existingTexts.has(t.toLowerCase()));
 
     if (uniqueSentences.length === 0) {
       res.json({
-        message: `تمت الموافقة على ${pendingIds.length} اقتراح، لكن جميع النصوص موجودة بالفعل في الجلسات`,
+        message: `تمت الموافقة على ${pendingIds.length} اقتراح، لكن لا توجد نصوص صالحة لإنشاء جلسات`,
         sessionsCreated: 0,
         uniqueSentences: 0,
         approvedSuggestions: pendingIds.length,

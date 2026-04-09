@@ -33,7 +33,13 @@ async function convertToWav16kMono(inputBuffer: Buffer, inputMimeType: string): 
   fs.mkdirSync(tmpDir, { recursive: true });
 
   const timestamp = Date.now();
-  const ext = inputMimeType.includes("webm") ? ".webm" : inputMimeType.includes("ogg") ? ".ogg" : ".audio";
+  const ext = inputMimeType.includes("webm")
+    ? ".webm"
+    : inputMimeType.includes("ogg")
+    ? ".ogg"
+    : inputMimeType.includes("mp4")
+    ? ".mp4"
+    : ".audio";
   const inputPath = path.join(tmpDir, `input_${timestamp}${ext}`);
   const outputPath = path.join(tmpDir, `output_${timestamp}.wav`);
 

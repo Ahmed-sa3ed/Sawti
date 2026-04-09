@@ -64,17 +64,34 @@ export default function UserRecording() {
     }
   }, [currentIndex]);
 
+  const getSupportedMimeType = (): string => {
+    const types = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/ogg;codecs=opus",
+      "audio/ogg",
+      "audio/mp4",
+    ];
+    for (const type of types) {
+      if (MediaRecorder.isTypeSupported(type)) return type;
+    }
+    return "";
+  };
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+      const mimeType = getSupportedMimeType();
+      const options = mimeType ? { mimeType } : {};
+      const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) audioChunksRef.current.push(event.data);
       };
       mediaRecorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: "audio/webm;codecs=opus" });
+        const actualType = mediaRecorder.mimeType || mimeType || "audio/webm";
+        const blob = new Blob(audioChunksRef.current, { type: actualType });
         setAudioBlob(blob);
         stream.getTracks().forEach(track => track.stop());
       };
@@ -194,7 +211,9 @@ export default function UserRecording() {
 
   const submit = () => {
     if (!audioBlob || !currentSentence) return;
-    const audioFile = new File([audioBlob], "recording.webm", { type: audioBlob.type || "audio/webm" });
+    const mimeType = audioBlob.type || "audio/webm";
+    const ext = mimeType.includes("mp4") ? "mp4" : mimeType.includes("ogg") ? "ogg" : "webm";
+    const audioFile = new File([audioBlob], `recording.${ext}`, { type: mimeType });
     submitRecording.mutate({ data: { sentenceId: currentSentence.id, sessionId: sid, audio: audioFile } }, {
       onSuccess: () => {
         toast({ title: "تم الإرسال بنجاح ✓" });

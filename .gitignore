@@ -47,3 +47,11 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# User-generated recordings (runtime data, not source code)
+artifacts/api-server/recordings/
+
+# Dev/test screenshots
+attached_assets/*.png
+attached_assets/*.jpg
+attached_assets/*.jpeg

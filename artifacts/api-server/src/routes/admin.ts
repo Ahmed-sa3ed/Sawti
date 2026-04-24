@@ -29,6 +29,16 @@ import {
 } from "@workspace/api-zod";
 import { requireAdmin } from "../middlewares/auth.js";
 
+async function getNextSessionNumber(): Promise<number> {
+  const existingNames = await db.select({ name: sessionsTable.name }).from(sessionsTable);
+  let max = 0;
+  for (const { name } of existingNames) {
+    const match = name.match(/(\d+)$/);
+    if (match) max = Math.max(max, parseInt(match[1], 10));
+  }
+  return max + 1;
+}
+
 const router = Router();
 
 const fileUpload = multer({
@@ -107,8 +117,7 @@ router.post("/bulk-upload", fileUpload.single("file"), async (req, res) => {
 
   const MAX_PER_SESSION = 50;
 
-  const existingSessions = await db.select({ id: sessionsTable.id }).from(sessionsTable);
-  let sessionNumber = existingSessions.length + 1;
+  let sessionNumber = await getNextSessionNumber();
 
   const createdSessionIds: number[] = [];
 
@@ -765,8 +774,7 @@ router.post("/suggestions/accept-all", async (req, res) => {
 
     // 4. Triplication + session creation (same algorithm as bulk-upload)
     const MAX_PER_SESSION = 50;
-    const existingSessions = await db.select({ id: sessionsTable.id }).from(sessionsTable);
-    let sessionNumber = existingSessions.length + 1;
+    let sessionNumber = await getNextSessionNumber();
     const createdSessionIds: number[] = [];
 
     for (let copy = 0; copy < 3; copy++) {
@@ -801,6 +809,20 @@ router.post("/suggestions/accept-all", async (req, res) => {
   } catch (err) {
     logger.error({ err }, "accept-all suggestions failed");
     res.status(500).json({ error: "حدث خطأ أثناء معالجة الاقتراحات" });
+  }
+});
+
+router.delete("/suggestions/processed", async (req, res) => {
+  try {
+    const deleted = await db
+      .delete(suggestionsTable)
+      .where(or(eq(suggestionsTable.isApproved, true), eq(suggestionsTable.isApproved, false)))
+      .returning({ id: suggestionsTable.id });
+
+    res.json({ message: `تم حذف ${deleted.length} اقتراح مُعالَج`, deletedCount: deleted.length });
+  } catch (err) {
+    logger.error({ err }, "clear processed suggestions failed");
+    res.status(500).json({ error: "حدث خطأ أثناء حذف الاقتراحات" });
   }
 });
 

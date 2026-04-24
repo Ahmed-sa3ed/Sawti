@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Check, X, AlertTriangle, CheckCheck } from "lucide-react";
+import { Check, X, AlertTriangle, CheckCheck, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 
@@ -13,10 +13,12 @@ export default function AdminSuggestions() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [isAcceptingAll, setIsAcceptingAll] = useState(false);
+  const [isClearingProcessed, setIsClearingProcessed] = useState(false);
 
   if (isLoading) return <div>جاري التحميل...</div>;
 
   const pendingCount = suggestions?.filter((s) => s.isApproved === null && !s.isDuplicate).length ?? 0;
+  const processedCount = suggestions?.filter((s) => s.isApproved !== null).length ?? 0;
 
   const handleUpdate = (id: number, isApproved: boolean) => {
     updateSuggestion.mutate({ suggestionId: id, data: { isApproved } }, {
@@ -52,22 +54,59 @@ export default function AdminSuggestions() {
     }
   };
 
+  const handleClearProcessed = async () => {
+    if (processedCount === 0) return;
+    if (!confirm(`هل أنت متأكد من حذف ${processedCount} اقتراح مُعالَج (مقبول أو مرفوض)؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+
+    setIsClearingProcessed(true);
+    try {
+      const res = await fetch("/api/admin/suggestions/processed", {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "فشل في حذف الاقتراحات");
+
+      queryClient.invalidateQueries({ queryKey: getAdminListSuggestionsQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getAdminGetDashboardQueryKey() });
+      toast({ title: data.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "حدث خطأ غير متوقع";
+      toast({ title: "فشل الحذف", description: msg, variant: "destructive" });
+    } finally {
+      setIsClearingProcessed(false);
+    }
+  };
+
   return (
     <div className="space-y-6" dir="rtl">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-primary">الاقتراحات</h1>
 
-        {pendingCount > 0 && (
-          <Button
-            variant="outline"
-            className="gap-2 border-green-300 text-green-700 hover:bg-green-50"
-            onClick={handleAcceptAll}
-            disabled={isAcceptingAll}
-          >
-            <CheckCheck className="h-4 w-4" />
-            {isAcceptingAll ? "جاري القبول..." : `قبول الكل وإنشاء جلسات (${pendingCount})`}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {processedCount > 0 && (
+            <Button
+              variant="outline"
+              className="gap-2 border-red-300 text-red-700 hover:bg-red-50"
+              onClick={handleClearProcessed}
+              disabled={isClearingProcessed}
+            >
+              <Trash2 className="h-4 w-4" />
+              {isClearingProcessed ? "جاري الحذف..." : `مسح المُعالَجة (${processedCount})`}
+            </Button>
+          )}
+          {pendingCount > 0 && (
+            <Button
+              variant="outline"
+              className="gap-2 border-green-300 text-green-700 hover:bg-green-50"
+              onClick={handleAcceptAll}
+              disabled={isAcceptingAll}
+            >
+              <CheckCheck className="h-4 w-4" />
+              {isAcceptingAll ? "جاري القبول..." : `قبول الكل وإنشاء جلسات (${pendingCount})`}
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="border rounded-md">

@@ -13,6 +13,7 @@ import path from "path";
 import fs from "fs";
 import { exec } from "child_process";
 import { promisify } from "util";
+import ffmpegStatic from "ffmpeg-static";
 import { CreateSuggestionBody } from "@workspace/api-zod";
 import { requireUser } from "../middlewares/auth.js";
 import { logger } from "../lib/logger.js";
@@ -46,8 +47,8 @@ async function convertToWav16kMono(inputBuffer: Buffer, inputMimeType: string): 
   fs.writeFileSync(inputPath, inputBuffer);
 
   try {
-    // Use exec (shell-based) so ffmpeg is resolved via the shell's PATH (Nix environment)
-    const cmd = `ffmpeg -y -i ${JSON.stringify(inputPath)} -ar 16000 -ac 1 -acodec pcm_s16le ${JSON.stringify(outputPath)}`;
+    const ffmpegBin = ffmpegStatic ?? "ffmpeg";
+    const cmd = `${JSON.stringify(ffmpegBin)} -y -i ${JSON.stringify(inputPath)} -ar 16000 -ac 1 -acodec pcm_s16le ${JSON.stringify(outputPath)}`;
     const { stderr } = await execAsync(cmd);
     if (stderr) logger.debug({ stderr }, "ffmpeg stderr");
 

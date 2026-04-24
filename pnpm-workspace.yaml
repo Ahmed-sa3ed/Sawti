@@ -39,6 +39,7 @@ onlyBuiltDependencies:
   - '@swc/core'
   - bcrypt
   - esbuild
+  - ffmpeg-static
   - msw
   - unrs-resolver
 

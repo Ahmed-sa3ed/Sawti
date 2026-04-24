@@ -12,9 +12,13 @@ import {
 import { eq, and, sql, inArray, isNull, or } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import archiver from "archiver";
-import fs from "fs";
 import path from "path";
 import multer from "multer";
+import {
+  streamRecordingToResponse,
+  deleteRecording,
+  downloadRecordingBuffer,
+} from "../lib/recordingStorage.js";
 import {
   AdminCreateUserBody,
   AdminCreateSessionBody,
@@ -437,15 +441,15 @@ router.delete("/sessions/:sessionId", async (req, res) => {
   const sessionId = parseInt(req.params.sessionId);
   if (isNaN(sessionId)) { res.status(400).json({ error: "معرف غير صالح" }); return; }
 
-  // Delete recording files on disk
+  // Delete recording files from object storage
   const recordings = await db
     .select()
     .from(recordingsTable)
     .where(eq(recordingsTable.sessionId, sessionId));
 
   for (const rec of recordings) {
-    if (rec.filePath && fs.existsSync(rec.filePath)) {
-      try { fs.unlinkSync(rec.filePath); } catch { /* ignore */ }
+    if (rec.filePath) {
+      await deleteRecording(rec.filePath);
     }
   }
 
@@ -613,30 +617,7 @@ router.get("/recordings/:recordingId/audio", async (req, res) => {
     return;
   }
 
-  if (!fs.existsSync(recording.filePath)) {
-    res.status(404).json({ error: "الملف الصوتي غير موجود" });
-    return;
-  }
-
-  const stat = fs.statSync(recording.filePath);
-  const fileExt = path.extname(recording.filePath).toLowerCase();
-  let contentType: string;
-  if (fileExt === ".wav") {
-    contentType = "audio/wav";
-  } else if (fileExt === ".webm") {
-    contentType = "audio/webm";
-  } else if (fileExt === ".ogg") {
-    contentType = "audio/ogg";
-  } else {
-    contentType = "application/octet-stream";
-  }
-
-  res.setHeader("Content-Type", contentType);
-  res.setHeader("Content-Length", stat.size);
-  res.setHeader("Accept-Ranges", "bytes");
-
-  const stream = fs.createReadStream(recording.filePath);
-  stream.pipe(res);
+  await streamRecordingToResponse(recording.filePath, res);
 });
 
 router.patch("/recordings/:recordingId/status", async (req, res) => {
@@ -662,10 +643,8 @@ router.patch("/recordings/:recordingId/status", async (req, res) => {
   const { status } = parsed.data;
 
   if (status === "rejected") {
-    // Delete the audio file from disk
-    if (fs.existsSync(recording.filePath)) {
-      fs.unlinkSync(recording.filePath);
-    }
+    // Delete the audio file from object storage
+    await deleteRecording(recording.filePath);
     // Delete the recording row - the sentence remains assigned to the same user
     // so they can re-record it (the sentence shows as unrecorded in their queue)
     await db.delete(recordingsTable).where(eq(recordingsTable.id, recordingId));
@@ -889,9 +868,10 @@ router.get("/download", async (req, res) => {
   const csvRows = ["file_name,sentence_text,username,session,status,timestamp"];
 
   for (const rec of filtered) {
-    if (fs.existsSync(rec.filePath)) {
+    const buffer = await downloadRecordingBuffer(rec.filePath);
+    if (buffer) {
       const fileName = path.basename(rec.filePath);
-      archive.file(rec.filePath, {
+      archive.append(buffer, {
         name: `${rec.username}/${rec.sessionName}/${fileName}`,
       });
       csvRows.push(

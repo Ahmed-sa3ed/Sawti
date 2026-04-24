@@ -19,7 +19,7 @@ pnpm workspace monorepo using TypeScript.
 - **Build**: esbuild (CJS bundle)
 - **Frontend**: React + Vite + Wouter + TailwindCSS + shadcn/ui
 - **Auth**: bcrypt password hashing, express-session cookies
-- **File storage**: Local filesystem (`recordings/<userId>/<sessionName>/recording_<timestamp>.wav`)
+- **File storage**: Replit Object Storage (GCS-backed) — object path `recordings/<userId>/<sessionName>/recording_<timestamp>.wav`, stored in `DEFAULT_OBJECT_STORAGE_BUCKET_ID` bucket
 - **Audio capture**: MediaRecorder API (webm/opus)
 
 ## Architecture
@@ -50,7 +50,7 @@ pnpm workspace monorepo using TypeScript.
 
 - Sentences are tripled on upload (3 copies per unique sentence, shuffled randomly)
 - When a user is assigned to a session, they receive ~1/3 of the available sentences (uniqueCount batch)
-- Rejecting a recording deletes the file from disk
+- Rejecting a recording deletes the file from object storage (GCS)
 - All text is in Arabic, RTL layout throughout
 - `credentials: 'include'` on all API fetches for session cookie propagation
 

@@ -17,16 +17,19 @@ import ffmpegStatic from "ffmpeg-static";
 import { CreateSuggestionBody } from "@workspace/api-zod";
 import { requireUser } from "../middlewares/auth.js";
 import { logger } from "../lib/logger.js";
+import {
+  uploadRecordingBuffer,
+  deleteRecording,
+} from "../lib/recordingStorage.js";
 
 const execAsync = promisify(exec);
 
 const router = Router();
 router.use(requireUser);
 
-function getRecordingsDir(userId: number, sessionName: string): string {
-  const dir = path.join(process.cwd(), "recordings", String(userId), sessionName);
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
+function getRecordingObjectPath(userId: number, sessionName: string, timestamp: number): string {
+  const safeName = sessionName.replace(/[^a-zA-Z0-9_\u0600-\u06FF-]/g, "_");
+  return `recordings/${userId}/${safeName}/recording_${timestamp}.wav`;
 }
 
 async function convertToWav16kMono(inputBuffer: Buffer, inputMimeType: string): Promise<Buffer> {
@@ -252,17 +255,23 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
     return;
   }
 
-  // Determine output directory and file path
+  // Determine output object path and upload to object storage
   const [sessionRow] = await db
     .select()
     .from(sessionsTable)
     .where(eq(sessionsTable.id, sessionId))
     .limit(1);
 
-  const dir = getRecordingsDir(userId, sessionRow?.name ?? String(sessionId));
   const timestamp = Date.now();
-  const filePath = path.join(dir, `recording_${timestamp}.wav`);
-  fs.writeFileSync(filePath, wavBuffer);
+  const objectPath = getRecordingObjectPath(userId, sessionRow?.name ?? String(sessionId), timestamp);
+
+  try {
+    await uploadRecordingBuffer(wavBuffer, objectPath);
+  } catch (uploadErr) {
+    logger.error({ uploadErr }, "failed to upload recording to object storage");
+    res.status(500).json({ error: "تعذر حفظ الملف الصوتي. يرجى المحاولة مجدداً." });
+    return;
+  }
 
   // Delete any existing recordings for this sentence by this user (and their files)
   const existingRecordings = await db
@@ -276,9 +285,7 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
     );
 
   for (const existing of existingRecordings) {
-    if (fs.existsSync(existing.filePath)) {
-      fs.unlinkSync(existing.filePath);
-    }
+    await deleteRecording(existing.filePath);
     await db.delete(recordingsTable).where(eq(recordingsTable.id, existing.id));
   }
 
@@ -288,7 +295,7 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
       userId,
       sessionId,
       sentenceId,
-      filePath,
+      filePath: objectPath,
     })
     .returning();
 

@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, XCircle, Play, Pause, CheckCheck } from "lucide-react";
+import { CheckCircle, XCircle, Play, Pause, CheckCheck, AlertTriangle, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function AdminRecordings() {
@@ -21,8 +21,11 @@ export default function AdminRecordings() {
   
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [audioElements, setAudioElements] = useState<Record<number, HTMLAudioElement>>({});
+  const [audioErrors, setAudioErrors] = useState<Record<number, boolean>>({});
 
-  const togglePlay = (id: number, filePath: string) => {
+  const togglePlay = (id: number) => {
+    if (audioErrors[id]) return;
+
     if (playingId === id) {
       audioElements[id].pause();
       setPlayingId(null);
@@ -37,16 +40,20 @@ export default function AdminRecordings() {
     if (!audio) {
       audio = new Audio(`/api/admin/recordings/${id}/audio`);
       audio.onended = () => setPlayingId(null);
+      audio.onerror = () => {
+        setAudioErrors(prev => ({ ...prev, [id]: true }));
+        setPlayingId(null);
+      };
       setAudioElements(prev => ({ ...prev, [id]: audio }));
     }
     
-    audio.play().catch(e => {
+    audio.play().then(() => {
+      setPlayingId(id);
+    }).catch(e => {
       console.error("Audio playback error:", e);
-      toast({ title: "خطأ في تشغيل الملف الصوتي", variant: "destructive" });
+      setAudioErrors(prev => ({ ...prev, [id]: true }));
       setPlayingId(null);
     });
-    
-    setPlayingId(id);
   };
 
   const handleUpdateStatus = (id: number, status: "accepted" | "rejected") => {
@@ -140,29 +147,47 @@ export default function AdminRecordings() {
                   {rec.status === "rejected" && <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">مرفوضة</Badge>}
                 </TableCell>
                 <TableCell>
-                  <Button variant="ghost" size="icon" onClick={() => togglePlay(rec.id, rec.filePath)}>
-                    {playingId === rec.id ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-                  </Button>
+                  {audioErrors[rec.id] ? (
+                    <div className="flex items-center gap-1.5 text-amber-600">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      <span className="text-xs font-medium">الصوت غير متاح</span>
+                    </div>
+                  ) : (
+                    <Button variant="ghost" size="icon" onClick={() => togglePlay(rec.id)}>
+                      {playingId === rec.id ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                    </Button>
+                  )}
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className={`gap-1 ${rec.status === 'accepted' ? 'bg-green-100' : 'hover:bg-green-50'}`}
-                      onClick={() => handleUpdateStatus(rec.id, "accepted")}
-                    >
-                      <CheckCircle className="h-4 w-4 text-green-600" /> قبول
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className={`gap-1 ${rec.status === 'rejected' ? 'bg-red-100' : 'hover:bg-red-50'}`}
+                  {audioErrors[rec.id] ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 hover:bg-red-50 text-red-600 border-red-200"
                       onClick={() => handleUpdateStatus(rec.id, "rejected")}
                     >
-                      <XCircle className="h-4 w-4 text-red-600" /> رفض
+                      <Trash2 className="h-4 w-4" /> رفض وحذف
                     </Button>
-                  </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className={`gap-1 ${rec.status === 'accepted' ? 'bg-green-100' : 'hover:bg-green-50'}`}
+                        onClick={() => handleUpdateStatus(rec.id, "accepted")}
+                      >
+                        <CheckCircle className="h-4 w-4 text-green-600" /> قبول
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className={`gap-1 ${rec.status === 'rejected' ? 'bg-red-100' : 'hover:bg-red-50'}`}
+                        onClick={() => handleUpdateStatus(rec.id, "rejected")}
+                      >
+                        <XCircle className="h-4 w-4 text-red-600" /> رفض
+                      </Button>
+                    </div>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

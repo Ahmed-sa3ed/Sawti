@@ -206,6 +206,17 @@ export interface DashboardStats {
   pendingSuggestions: number;
 }
 
+export interface OrphanedRecordingsResponse {
+  orphanedIds: number[];
+  /** Number of recordings whose storage status could not be determined due to infrastructure errors */
+  errorCount: number;
+}
+
+export interface DeleteOrphanedRecordingsResponse {
+  message: string;
+  count: number;
+}
+
 export type AdminListSessionsParams = {
   /**
    * If provided, exclude sessions already assigned to this user

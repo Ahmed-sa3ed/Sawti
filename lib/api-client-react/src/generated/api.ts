@@ -27,10 +27,12 @@ import type {
   CreateSuggestionRequest,
   CreateUserRequest,
   DashboardStats,
+  DeleteOrphanedRecordingsResponse,
   ErrorResponse,
   HealthStatus,
   LoginRequest,
   MessageResponse,
+  OrphanedRecordingsResponse,
   RecordingInfo,
   RecordingWithDetails,
   ResetPasswordRequest,
@@ -1054,6 +1056,172 @@ export const useAdminUploadSentences = <
   TContext
 > => {
   return useMutation(getAdminUploadSentencesMutationOptions(options));
+};
+
+/**
+ * Returns IDs of recordings whose audio files are missing from object storage
+ * @summary Detect orphaned recordings (admin)
+ */
+export const getAdminGetOrphanedRecordingsUrl = () => {
+  return `/api/admin/recordings/orphaned`;
+};
+
+export const adminGetOrphanedRecordings = async (
+  options?: RequestInit,
+): Promise<OrphanedRecordingsResponse> => {
+  return customFetch<OrphanedRecordingsResponse>(
+    getAdminGetOrphanedRecordingsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getAdminGetOrphanedRecordingsQueryKey = () => {
+  return [`/api/admin/recordings/orphaned`] as const;
+};
+
+export const getAdminGetOrphanedRecordingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof adminGetOrphanedRecordings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminGetOrphanedRecordings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getAdminGetOrphanedRecordingsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof adminGetOrphanedRecordings>>
+  > = ({ signal }) => adminGetOrphanedRecordings({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof adminGetOrphanedRecordings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AdminGetOrphanedRecordingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof adminGetOrphanedRecordings>>
+>;
+export type AdminGetOrphanedRecordingsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Detect orphaned recordings (admin)
+ */
+
+export function useAdminGetOrphanedRecordings<
+  TData = Awaited<ReturnType<typeof adminGetOrphanedRecordings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof adminGetOrphanedRecordings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAdminGetOrphanedRecordingsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Deletes all recording DB rows whose audio files are missing from object storage. Aborts with 503 if any storage checks fail to avoid unsafe bulk deletion.
+ * @summary Delete all orphaned recordings (admin)
+ */
+export const getAdminDeleteOrphanedRecordingsUrl = () => {
+  return `/api/admin/recordings/orphaned`;
+};
+
+export const adminDeleteOrphanedRecordings = async (
+  options?: RequestInit,
+): Promise<DeleteOrphanedRecordingsResponse> => {
+  return customFetch<DeleteOrphanedRecordingsResponse>(
+    getAdminDeleteOrphanedRecordingsUrl(),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getAdminDeleteOrphanedRecordingsMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminDeleteOrphanedRecordings>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminDeleteOrphanedRecordings>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["adminDeleteOrphanedRecordings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminDeleteOrphanedRecordings>>,
+    void
+  > = () => {
+    return adminDeleteOrphanedRecordings(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminDeleteOrphanedRecordingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adminDeleteOrphanedRecordings>>
+>;
+
+export type AdminDeleteOrphanedRecordingsMutationError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary Delete all orphaned recordings (admin)
+ */
+export const useAdminDeleteOrphanedRecordings = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminDeleteOrphanedRecordings>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adminDeleteOrphanedRecordings>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getAdminDeleteOrphanedRecordingsMutationOptions(options));
 };
 
 /**

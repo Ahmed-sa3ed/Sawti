@@ -310,6 +310,38 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /admin/recordings/orphaned:
+    get:
+      operationId: adminGetOrphanedRecordings
+      tags: [recordings]
+      summary: Detect orphaned recordings (admin)
+      description: Returns IDs of recordings whose audio files are missing from object storage
+      responses:
+        "200":
+          description: List of orphaned recording IDs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrphanedRecordingsResponse"
+    delete:
+      operationId: adminDeleteOrphanedRecordings
+      tags: [recordings]
+      summary: Delete all orphaned recordings (admin)
+      description: Deletes all recording DB rows whose audio files are missing from object storage. Aborts with 503 if any storage checks fail to avoid unsafe bulk deletion.
+      responses:
+        "200":
+          description: Orphaned recordings deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteOrphanedRecordingsResponse"
+        "503":
+          description: Storage checks partially failed; deletion was aborted to protect data integrity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /admin/recordings/accept-all:
     post:
       operationId: adminAcceptAllRecordings
@@ -1002,3 +1034,28 @@ components:
         - rejectedRecordings
         - pendingRecordings
         - pendingSuggestions
+
+    OrphanedRecordingsResponse:
+      type: object
+      properties:
+        orphanedIds:
+          type: array
+          items:
+            type: integer
+        errorCount:
+          type: integer
+          description: Number of recordings whose storage status could not be determined due to infrastructure errors
+      required:
+        - orphanedIds
+        - errorCount
+
+    DeleteOrphanedRecordingsResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        count:
+          type: integer
+      required:
+        - message
+        - count

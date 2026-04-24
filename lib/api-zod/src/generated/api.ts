@@ -155,6 +155,28 @@ export const AdminUploadSentencesBody = zod.object({
 });
 
 /**
+ * Returns IDs of recordings whose audio files are missing from object storage
+ * @summary Detect orphaned recordings (admin)
+ */
+export const AdminGetOrphanedRecordingsResponse = zod.object({
+  orphanedIds: zod.array(zod.number()),
+  errorCount: zod
+    .number()
+    .describe(
+      "Number of recordings whose storage status could not be determined due to infrastructure errors",
+    ),
+});
+
+/**
+ * Deletes all recording DB rows whose audio files are missing from object storage. Aborts with 503 if any storage checks fail to avoid unsafe bulk deletion.
+ * @summary Delete all orphaned recordings (admin)
+ */
+export const AdminDeleteOrphanedRecordingsResponse = zod.object({
+  message: zod.string(),
+  count: zod.number(),
+});
+
+/**
  * @summary Accept all pending recordings (admin)
  */
 export const AdminAcceptAllRecordingsResponse = zod.object({

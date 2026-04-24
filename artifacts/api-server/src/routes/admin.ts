@@ -18,6 +18,7 @@ import {
   streamRecordingToResponse,
   deleteRecording,
   downloadRecordingBuffer,
+  checkRecordingExists,
 } from "../lib/recordingStorage.js";
 import {
   AdminCreateUserBody,
@@ -597,6 +598,91 @@ router.get("/recordings", async (req, res) => {
       createdAt: r.createdAt.toISOString(),
     }))
   );
+});
+
+const ORPHAN_CHECK_CONCURRENCY = 10;
+
+async function runConcurrently<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number
+): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let next = 0;
+  async function worker() {
+    while (next < tasks.length) {
+      const i = next++;
+      results[i] = await tasks[i]();
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, worker);
+  await Promise.all(workers);
+  return results;
+}
+
+router.get("/recordings/orphaned", async (req, res) => {
+  const recordings = await db
+    .select({
+      id: recordingsTable.id,
+      filePath: recordingsTable.filePath,
+    })
+    .from(recordingsTable);
+
+  const tasks = recordings.map(
+    (rec) => async (): Promise<{ id: number; result: boolean | null }> => ({
+      id: rec.id,
+      result: await checkRecordingExists(rec.filePath),
+    })
+  );
+
+  const checks = await runConcurrently(tasks, ORPHAN_CHECK_CONCURRENCY);
+
+  const errorCount = checks.filter((c) => c.result === null).length;
+  const orphanedIds = checks
+    .filter((c) => c.result === false)
+    .map((c) => c.id);
+
+  res.json({ orphanedIds, errorCount });
+});
+
+router.delete("/recordings/orphaned", async (req, res) => {
+  const recordings = await db
+    .select({
+      id: recordingsTable.id,
+      filePath: recordingsTable.filePath,
+    })
+    .from(recordingsTable);
+
+  const tasks = recordings.map(
+    (rec) => async (): Promise<{ id: number; filePath: string; result: boolean | null }> => ({
+      id: rec.id,
+      filePath: rec.filePath,
+      result: await checkRecordingExists(rec.filePath),
+    })
+  );
+
+  const checks = await runConcurrently(tasks, ORPHAN_CHECK_CONCURRENCY);
+
+  const errorCount = checks.filter((c) => c.result === null).length;
+  if (errorCount > 0) {
+    logger.error({ errorCount }, "Aborting orphan delete: storage checks returned errors");
+    res.status(503).json({
+      error: `فشل فحص ${errorCount} ملف، تم إلغاء الحذف للحفاظ على سلامة البيانات`,
+    });
+    return;
+  }
+
+  const orphaned = checks.filter((c) => c.result === false);
+
+  if (orphaned.length === 0) {
+    res.json({ message: "لا توجد تسجيلات يتيمة", count: 0 });
+    return;
+  }
+
+  const ids = orphaned.map((r) => r.id);
+  await db.delete(recordingsTable).where(inArray(recordingsTable.id, ids));
+
+  logger.info({ count: orphaned.length }, "Deleted orphaned recordings");
+  res.json({ message: `تم حذف ${orphaned.length} تسجيل يتيم`, count: orphaned.length });
 });
 
 router.get("/recordings/:recordingId/audio", async (req, res) => {

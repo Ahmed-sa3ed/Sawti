@@ -120,3 +120,38 @@ export async function downloadRecordingBuffer(objectPath: string): Promise<Buffe
     return null;
   }
 }
+
+/**
+ * Check whether a recording file exists in object storage.
+ * Returns:
+ *   true  — file is present (2xx response from storage)
+ *   false — file is definitively missing (storage returned 404)
+ *   null  — check failed due to an infrastructure/network error; result is unknown
+ */
+export async function checkRecordingExists(objectPath: string): Promise<boolean | null> {
+  let url: string;
+  try {
+    const { bucketName, objectName } = getBucketAndObject(objectPath);
+    url = await getSignedUrl(bucketName, objectName, "GET");
+  } catch (err) {
+    // Sidecar unavailable or mis-configured — result is unknown
+    logger.warn({ err, objectPath }, "checkRecordingExists: failed to obtain signed URL");
+    return null;
+  }
+
+  let storageResponse: Awaited<ReturnType<typeof fetch>>;
+  try {
+    storageResponse = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    if (storageResponse.body) storageResponse.body.cancel().catch(() => {});
+  } catch (err) {
+    // Network / timeout error — cannot determine presence
+    logger.warn({ err, objectPath }, "checkRecordingExists: storage fetch failed");
+    return null;
+  }
+
+  if (storageResponse.status === 404) return false;
+  if (storageResponse.ok) return true;
+  // Any other non-200 status (403, 500, …) is treated as an infrastructure error
+  logger.warn({ status: storageResponse.status, objectPath }, "checkRecordingExists: unexpected storage status");
+  return null;
+}

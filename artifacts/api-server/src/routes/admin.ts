@@ -313,37 +313,42 @@ router.post("/users/:userId/sessions", async (req, res) => {
     )
     .limit(1);
 
-  if (existing.length === 0) {
-    await db.insert(userSessionsTable).values({ userId, sessionId });
+  if (existing.length > 0) {
+    res.status(409).json({ error: "المستخدم مُعيَّن لهذه الجلسة بالفعل" });
+    return;
+  }
 
-    // Get all sentences in this session, ordered by orderIndex
-    const allSentences = await db
-      .select()
-      .from(sentencesTable)
-      .where(eq(sentencesTable.sessionId, sessionId))
-      .orderBy(sentencesTable.orderIndex);
+  // Get all sentences in this session, ordered by orderIndex
+  const allSentences = await db
+    .select()
+    .from(sentencesTable)
+    .where(eq(sentencesTable.sessionId, sessionId))
+    .orderBy(sentencesTable.orderIndex);
 
-    // Find unique sentence texts to know how many unique sentences there are
-    const uniqueTexts = [...new Set(allSentences.map((s) => s.text))];
+  // Find unique sentence texts to know how many unique sentences there are
+  const uniqueTexts = [...new Set(allSentences.map((s) => s.text))];
 
-    // For each unique text, pick ONE unassigned copy to assign to this user.
-    // This guarantees the user receives exactly one copy of each unique sentence.
-    const unassignedSentences = allSentences.filter((s) => s.assignedUserId === null);
-    const usedTexts = new Set<string>();
-    const toAssign = unassignedSentences.filter((s) => {
-      if (usedTexts.has(s.text)) return false;
-      usedTexts.add(s.text);
-      return true;
-    }).slice(0, uniqueTexts.length);
+  // For each unique text, pick ONE unassigned copy to assign to this user.
+  const unassignedSentences = allSentences.filter((s) => s.assignedUserId === null);
+  const usedTexts = new Set<string>();
+  const toAssign = unassignedSentences.filter((s) => {
+    if (usedTexts.has(s.text)) return false;
+    usedTexts.add(s.text);
+    return true;
+  }).slice(0, uniqueTexts.length);
 
-    if (toAssign.length > 0) {
-      for (const sentence of toAssign) {
-        await db
-          .update(sentencesTable)
-          .set({ assignedUserId: userId })
-          .where(eq(sentencesTable.id, sentence.id));
-      }
-    }
+  if (toAssign.length === 0) {
+    res.status(409).json({ error: "الجلسة ممتلئة — جميع الجمل مُعيَّنة لمستخدمين آخرين" });
+    return;
+  }
+
+  await db.insert(userSessionsTable).values({ userId, sessionId });
+
+  for (const sentence of toAssign) {
+    await db
+      .update(sentencesTable)
+      .set({ assignedUserId: userId })
+      .where(eq(sentencesTable.id, sentence.id));
   }
 
   res.json({ message: "تم تعيين الجلسة للمستخدم بنجاح" });
@@ -381,12 +386,15 @@ router.get("/sessions", async (req, res) => {
         .from(recordingsTable)
         .where(eq(recordingsTable.sessionId, session.id));
 
+      const unassignedCount = sentences.filter((s) => s.assignedUserId === null).length;
+
       return {
         id: session.id,
         name: session.name,
         description: session.description,
         createdAt: session.createdAt.toISOString(),
         totalSentences: sentences.length,
+        unassignedCount,
         assignedUsers: assignedUsers.length,
         totalRecordings: recordings.length,
         acceptedRecordings: recordings.filter((r) => r.status === "accepted").length,
@@ -394,9 +402,15 @@ router.get("/sessions", async (req, res) => {
     })
   );
 
-  const filteredSessions = assignedSessionIds.size > 0
+  let filteredSessions = assignedSessionIds.size > 0
     ? sessionsWithStats.filter((s) => !assignedSessionIds.has(s.id))
     : sessionsWithStats;
+
+  // When fetching sessions for a specific user (to assign), only show sessions
+  // that still have unassigned sentences available
+  if (params.userId !== undefined) {
+    filteredSessions = filteredSessions.filter((s) => s.unassignedCount > 0);
+  }
 
   res.json(filteredSessions);
 });

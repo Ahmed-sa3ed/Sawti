@@ -82,7 +82,13 @@ export default function AdminUsers() {
         setAssignOpen(null);
         assignForm.reset();
         toast({ title: "تم تعيين الجلسة" });
-      }
+      },
+      onError: (err: unknown) => {
+        const msg =
+          (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+          "فشل تعيين الجلسة";
+        toast({ title: msg, variant: "destructive" });
+      },
     });
   };
 
@@ -215,7 +221,7 @@ export default function AdminUsers() {
                                         <SelectValue placeholder="اختر الجلسة" />
                                       </SelectTrigger>
                                     </FormControl>
-                                    <SelectContent dir="rtl">
+                                    <SelectContent dir="rtl" className="max-h-60 overflow-y-auto">
                                       {(sessionsForAssign ?? []).length === 0 ? (
                                         <div className="px-4 py-2 text-sm text-muted-foreground">لا توجد جلسات متاحة</div>
                                       ) : (

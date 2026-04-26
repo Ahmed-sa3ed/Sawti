@@ -124,8 +124,9 @@ router.post("/bulk-upload", fileUpload.single("file"), async (req, res) => {
 
   const MAX_PER_SESSION = 50;
 
-  // Use filename (without extension) as the session name prefix
-  const filePrefix = path.basename(file.originalname, path.extname(file.originalname)).trim() || "جلسة";
+  // multer reads filenames as latin1; re-decode as utf-8 to handle Arabic names
+  const decodedName = Buffer.from(file.originalname, "latin1").toString("utf8");
+  const filePrefix = path.basename(decodedName, path.extname(decodedName)).trim() || "جلسة";
   let sessionNumber = await getNextSessionNumberForPrefix(filePrefix);
 
   const createdSessionIds: number[] = [];

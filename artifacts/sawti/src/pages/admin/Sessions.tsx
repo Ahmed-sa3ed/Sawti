@@ -3,7 +3,7 @@ import { useAdminListSessions, getAdminListSessionsQueryKey } from "@workspace/a
 import { useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Eye, Pencil, Trash2, X, ChevronDown, ChevronUp } from "lucide-react";
+import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Eye, Pencil, Trash2, X, ChevronDown, ChevronUp, Copy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 type UploadResult = {
@@ -50,6 +50,33 @@ export default function AdminSessions() {
 
   const [deleteSessionId, setDeleteSessionId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkDuplicating, setBulkDuplicating] = useState(false);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+
+  const allIds = (sessions ?? []).map((s) => s.id);
+  const allSelected = allIds.length > 0 && allIds.every((id) => selectedIds.has(id));
+  const someSelected = selectedIds.size > 0;
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(allIds));
+    }
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const resetUploadDialog = () => {
     setSelectedFile(null);
@@ -127,7 +154,7 @@ export default function AdminSessions() {
     if (!editSession || !editName.trim()) return;
     setEditSaving(true);
     try {
-    const res = await fetch(`/api/admin/sessions/${editSession.id}`, {
+      const res = await fetch(`/api/admin/sessions/${editSession.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: editName.trim() }),
@@ -164,12 +191,64 @@ export default function AdminSessions() {
         queryClient.invalidateQueries({ queryKey: getAdminListSessionsQueryKey() });
         if (expandedSessionId === deleteSessionId) setExpandedSessionId(null);
         setSentencesMap(prev => { const next = { ...prev }; delete next[deleteSessionId]; return next; });
+        setSelectedIds(prev => { const next = new Set(prev); next.delete(deleteSessionId); return next; });
         setDeleteSessionId(null);
       }
     } catch {
       toast({ title: "خطأ في الاتصال", variant: "destructive" });
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    setBulkDeleting(true);
+    setBulkDeleteConfirmOpen(false);
+    try {
+      const res = await fetch("/api/admin/sessions/bulk", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+        credentials: "include",
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        toast({ title: d.error ?? "فشل الحذف الجماعي", variant: "destructive" });
+      } else {
+        toast({ title: `تم حذف ${d.deleted} جلسة بنجاح` });
+        queryClient.invalidateQueries({ queryKey: getAdminListSessionsQueryKey() });
+        setSelectedIds(new Set());
+        setSentencesMap({});
+        setExpandedSessionId(null);
+      }
+    } catch {
+      toast({ title: "خطأ في الاتصال", variant: "destructive" });
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  const handleBulkDuplicate = async () => {
+    setBulkDuplicating(true);
+    try {
+      const res = await fetch("/api/admin/sessions/bulk-duplicate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+        credentials: "include",
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        toast({ title: d.error ?? "فشل النسخ الجماعي", variant: "destructive" });
+      } else {
+        toast({ title: `تم نسخ ${d.created} جلسة بنجاح` });
+        queryClient.invalidateQueries({ queryKey: getAdminListSessionsQueryKey() });
+        setSelectedIds(new Set());
+      }
+    } catch {
+      toast({ title: "خطأ في الاتصال", variant: "destructive" });
+    } finally {
+      setBulkDuplicating(false);
     }
   };
 
@@ -209,7 +288,7 @@ export default function AdminSessions() {
                 <li>كل جملة في الملف تُكرَّر 3 مرات</li>
                 <li>كل جلسة تحتوي على 50 جملة كحد أقصى</li>
                 <li>لا تتكرر نفس الجملة داخل الجلسة الواحدة</li>
-                <li>الجلسات تُرقَّم تلقائياً (جلسة 1، جلسة 2، ...)</li>
+                <li>الجلسات تُسمَّى باسم الملف المرفوع + رقم تسلسلي</li>
               </ul>
             </div>
             {!uploadResult && (
@@ -326,7 +405,7 @@ export default function AdminSessions() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Single Delete Confirmation Dialog */}
       <Dialog open={!!deleteSessionId} onOpenChange={(open) => { if (!open) setDeleteSessionId(null); }}>
         <DialogContent dir="rtl" className="max-w-sm">
           <DialogHeader>
@@ -359,6 +438,39 @@ export default function AdminSessions() {
         </DialogContent>
       </Dialog>
 
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog open={bulkDeleteConfirmOpen} onOpenChange={setBulkDeleteConfirmOpen}>
+        <DialogContent dir="rtl" className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-4 w-4" />
+              حذف {selectedIds.size} جلسة
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-muted-foreground text-sm leading-relaxed">
+              سيتم حذف {selectedIds.size} جلسة وجميع جملها وتسجيلاتها بشكل نهائي. لا يمكن التراجع عن هذا الإجراء.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                className="flex-1 py-2 rounded-lg bg-destructive text-destructive-foreground font-medium hover:bg-destructive/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                حذف نهائياً
+              </button>
+              <button
+                onClick={() => setBulkDeleteConfirmOpen(false)}
+                className="flex-1 py-2 rounded-lg border border-border text-muted-foreground hover:bg-muted transition-colors font-medium"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Sessions table */}
       {(!sessions || sessions.length === 0) ? (
         <div className="border rounded-xl p-16 text-center text-muted-foreground">
@@ -367,132 +479,186 @@ export default function AdminSessions() {
           <p className="text-sm mt-1">ارفع ملف جمل لإنشاء الجلسات تلقائياً</p>
         </div>
       ) : (
-        <div className="border rounded-md overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-right w-8"></TableHead>
-                <TableHead className="text-right">الجلسة</TableHead>
-                <TableHead className="text-right">عدد الجمل</TableHead>
-                <TableHead className="text-right">المستخدمين</TableHead>
-                <TableHead className="text-right">التسجيلات</TableHead>
-                <TableHead className="text-right">نسبة الإنجاز</TableHead>
-                <TableHead className="text-right w-32">إجراءات</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sessions.map((session) => {
-                const pct = session.totalSentences > 0
-                  ? Math.round((session.acceptedRecordings / session.totalSentences) * 100)
-                  : 0;
-                const isExpanded = expandedSessionId === session.id;
-                const isLoadingThis = loadingSentences === session.id;
-                const sessionSentences = sentencesMap[session.id];
+        <>
+          {/* Bulk action bar */}
+          {someSelected && (
+            <div className="flex items-center gap-3 px-4 py-3 bg-primary/5 border border-primary/20 rounded-lg">
+              <span className="text-sm font-medium text-primary">
+                تم تحديد {selectedIds.size} جلسة
+              </span>
+              <div className="flex items-center gap-2 mr-auto">
+                <button
+                  onClick={handleBulkDuplicate}
+                  disabled={bulkDuplicating || bulkDeleting}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {bulkDuplicating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+                  نسخ المحدد
+                </button>
+                <button
+                  onClick={() => setBulkDeleteConfirmOpen(true)}
+                  disabled={bulkDeleting || bulkDuplicating}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-destructive text-destructive-foreground text-sm font-medium hover:bg-destructive/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {bulkDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  حذف المحدد
+                </button>
+                <button
+                  onClick={() => setSelectedIds(new Set())}
+                  className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground"
+                  title="إلغاء التحديد"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
 
-                return (
-                  <Fragment key={session.id}>
-                    <TableRow className={isExpanded ? "bg-muted/30" : ""}>
-                      <TableCell>
-                        <button
-                          onClick={() => toggleSentences(session.id)}
-                          className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground"
-                          title="عرض الجمل"
-                        >
-                          {isLoadingThis
-                            ? <Loader2 className="h-4 w-4 animate-spin" />
-                            : isExpanded
-                            ? <ChevronUp className="h-4 w-4" />
-                            : <ChevronDown className="h-4 w-4" />
-                          }
-                        </button>
-                      </TableCell>
-                      <TableCell className="font-medium">{session.name}</TableCell>
-                      <TableCell>{session.totalSentences}</TableCell>
-                      <TableCell>{session.assignedUsers}</TableCell>
-                      <TableCell>
-                        {session.totalRecordings > 0
-                          ? `${session.acceptedRecordings} مقبولة / ${session.totalRecordings}`
-                          : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden max-w-24">
-                            <div
-                              className="h-full bg-primary rounded-full transition-all"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                          <span className="text-sm text-muted-foreground">{pct}%</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => openEdit(session as unknown as SessionRow)}
-                            className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                            title="تعديل الاسم"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => setDeleteSessionId(session.id)}
-                            className="p-1.5 rounded hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive"
-                            title="حذف الجلسة"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
+          <div className="border rounded-md overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10 text-right">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
+                      title="تحديد الكل"
+                    />
+                  </TableHead>
+                  <TableHead className="text-right w-8"></TableHead>
+                  <TableHead className="text-right">الجلسة</TableHead>
+                  <TableHead className="text-right">عدد الجمل</TableHead>
+                  <TableHead className="text-right">المستخدمين</TableHead>
+                  <TableHead className="text-right">التسجيلات</TableHead>
+                  <TableHead className="text-right">نسبة الإنجاز</TableHead>
+                  <TableHead className="text-right w-32">إجراءات</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sessions.map((session) => {
+                  const pct = session.totalSentences > 0
+                    ? Math.round((session.acceptedRecordings / session.totalSentences) * 100)
+                    : 0;
+                  const isExpanded = expandedSessionId === session.id;
+                  const isLoadingThis = loadingSentences === session.id;
+                  const sessionSentences = sentencesMap[session.id];
+                  const isChecked = selectedIds.has(session.id);
 
-                    {/* Expanded sentences row */}
-                    {isExpanded && (
-                      <TableRow>
-                        <TableCell colSpan={7} className="p-0">
-                          <div className="bg-muted/20 border-t border-border px-6 py-4">
-                            <div className="flex items-center justify-between mb-3">
-                              <h4 className="font-semibold text-sm text-foreground flex items-center gap-2">
-                                <Eye className="h-4 w-4 text-primary" />
-                                جمل الجلسة ({sessionSentences?.length ?? 0})
-                              </h4>
-                              <button
-                                onClick={() => setExpandedSessionId(null)}
-                                className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
+                  return (
+                    <Fragment key={session.id}>
+                      <TableRow className={isExpanded ? "bg-muted/30" : isChecked ? "bg-primary/5" : ""}>
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleSelect(session.id)}
+                            className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <button
+                            onClick={() => toggleSentences(session.id)}
+                            className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground"
+                            title="عرض الجمل"
+                          >
+                            {isLoadingThis
+                              ? <Loader2 className="h-4 w-4 animate-spin" />
+                              : isExpanded
+                              ? <ChevronUp className="h-4 w-4" />
+                              : <ChevronDown className="h-4 w-4" />
+                            }
+                          </button>
+                        </TableCell>
+                        <TableCell className="font-medium">{session.name}</TableCell>
+                        <TableCell>{session.totalSentences}</TableCell>
+                        <TableCell>{session.assignedUsers}</TableCell>
+                        <TableCell>
+                          {session.totalRecordings > 0
+                            ? `${session.acceptedRecordings} مقبولة / ${session.totalRecordings}`
+                            : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden max-w-24">
+                              <div
+                                className="h-full bg-primary rounded-full transition-all"
+                                style={{ width: `${pct}%` }}
+                              />
                             </div>
-                            {!sessionSentences ? (
-                              <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
-                                <Loader2 className="h-4 w-4 animate-spin" /> جاري التحميل...
-                              </div>
-                            ) : sessionSentences.length === 0 ? (
-                              <p className="text-muted-foreground text-sm py-4">لا توجد جمل في هذه الجلسة</p>
-                            ) : (
-                              <div className="max-h-64 overflow-y-auto space-y-1.5 pl-1">
-                                {sessionSentences.map((s, idx) => (
-                                  <div key={s.id} className="flex items-start gap-3 text-sm py-1.5 border-b border-border/50 last:border-0">
-                                    <span className="text-muted-foreground font-mono text-xs pt-0.5 min-w-[2rem]">{idx + 1}.</span>
-                                    <span className="text-foreground leading-relaxed">{s.text}</span>
-                                    {s.assignedUserId && (
-                                      <span className="mr-auto text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full whitespace-nowrap">
-                                        مُعيَّنة
-                                      </span>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                            <span className="text-sm text-muted-foreground">{pct}%</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => openEdit(session as unknown as SessionRow)}
+                              className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                              title="تعديل الاسم"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => setDeleteSessionId(session.id)}
+                              className="p-1.5 rounded hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive"
+                              title="حذف الجلسة"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
                           </div>
                         </TableCell>
                       </TableRow>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
+
+                      {/* Expanded sentences row */}
+                      {isExpanded && (
+                        <TableRow>
+                          <TableCell colSpan={8} className="p-0">
+                            <div className="bg-muted/20 border-t border-border px-6 py-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <h4 className="font-semibold text-sm text-foreground flex items-center gap-2">
+                                  <Eye className="h-4 w-4 text-primary" />
+                                  جمل الجلسة ({sessionSentences?.length ?? 0})
+                                </h4>
+                                <button
+                                  onClick={() => setExpandedSessionId(null)}
+                                  className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                              {!sessionSentences ? (
+                                <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
+                                  <Loader2 className="h-4 w-4 animate-spin" /> جاري التحميل...
+                                </div>
+                              ) : sessionSentences.length === 0 ? (
+                                <p className="text-muted-foreground text-sm py-4">لا توجد جمل في هذه الجلسة</p>
+                              ) : (
+                                <div className="max-h-64 overflow-y-auto space-y-1.5 pl-1">
+                                  {sessionSentences.map((s, idx) => (
+                                    <div key={s.id} className="flex items-start gap-3 text-sm py-1.5 border-b border-border/50 last:border-0">
+                                      <span className="text-muted-foreground font-mono text-xs pt-0.5 min-w-[2rem]">{idx + 1}.</span>
+                                      <span className="text-foreground leading-relaxed">{s.text}</span>
+                                      {s.assignedUserId && (
+                                        <span className="mr-auto text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full whitespace-nowrap">
+                                          مُعيَّنة
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
     </div>
   );

@@ -34,11 +34,13 @@ import {
 } from "@workspace/api-zod";
 import { requireAdmin } from "../middlewares/auth.js";
 
-async function getNextSessionNumber(): Promise<number> {
+async function getNextSessionNumberForPrefix(prefix: string): Promise<number> {
   const existingNames = await db.select({ name: sessionsTable.name }).from(sessionsTable);
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`^${escapedPrefix} (\\d+)$`);
   let max = 0;
   for (const { name } of existingNames) {
-    const match = name.match(/(\d+)$/);
+    const match = name.match(pattern);
     if (match) max = Math.max(max, parseInt(match[1], 10));
   }
   return max + 1;
@@ -122,7 +124,9 @@ router.post("/bulk-upload", fileUpload.single("file"), async (req, res) => {
 
   const MAX_PER_SESSION = 50;
 
-  let sessionNumber = await getNextSessionNumber();
+  // Use filename (without extension) as the session name prefix
+  const filePrefix = path.basename(file.originalname, path.extname(file.originalname)).trim() || "جلسة";
+  let sessionNumber = await getNextSessionNumberForPrefix(filePrefix);
 
   const createdSessionIds: number[] = [];
 
@@ -133,7 +137,7 @@ router.post("/bulk-upload", fileUpload.single("file"), async (req, res) => {
 
       const [newSession] = await db
         .insert(sessionsTable)
-        .values({ name: `جلسة ${sessionNumber}`, description: null })
+        .values({ name: `${filePrefix} ${sessionNumber}`, description: null })
         .returning();
 
       sessionNumber++;
@@ -450,6 +454,80 @@ router.patch("/sessions/:sessionId", async (req, res) => {
 
   if (updated.length === 0) { res.status(404).json({ error: "الجلسة غير موجودة" }); return; }
   res.json({ id: updated[0].id, name: updated[0].name });
+});
+
+router.delete("/sessions/bulk", async (req, res) => {
+  const { ids } = req.body as { ids: unknown };
+  if (!Array.isArray(ids) || ids.length === 0) {
+    res.status(400).json({ error: "لم يتم تحديد جلسات" });
+    return;
+  }
+  const numericIds = (ids as unknown[]).map(Number).filter((n) => !isNaN(n));
+  if (numericIds.length === 0) {
+    res.status(400).json({ error: "معرفات غير صالحة" });
+    return;
+  }
+
+  for (const sessionId of numericIds) {
+    const recordings = await db.select().from(recordingsTable).where(eq(recordingsTable.sessionId, sessionId));
+    for (const rec of recordings) {
+      if (rec.filePath) await deleteRecording(rec.filePath);
+    }
+    await db.delete(recordingsTable).where(eq(recordingsTable.sessionId, sessionId));
+    await db.delete(userSessionsTable).where(eq(userSessionsTable.sessionId, sessionId));
+    await db.delete(sentencesTable).where(eq(sentencesTable.sessionId, sessionId));
+    await db.delete(sessionsTable).where(eq(sessionsTable.id, sessionId));
+  }
+
+  res.json({ ok: true, deleted: numericIds.length });
+});
+
+router.post("/sessions/bulk-duplicate", async (req, res) => {
+  const { ids } = req.body as { ids: unknown };
+  if (!Array.isArray(ids) || ids.length === 0) {
+    res.status(400).json({ error: "لم يتم تحديد جلسات" });
+    return;
+  }
+  const numericIds = (ids as unknown[]).map(Number).filter((n) => !isNaN(n));
+  if (numericIds.length === 0) {
+    res.status(400).json({ error: "معرفات غير صالحة" });
+    return;
+  }
+
+  const created: number[] = [];
+  for (const sessionId of numericIds) {
+    const [original] = await db.select().from(sessionsTable).where(eq(sessionsTable.id, sessionId)).limit(1);
+    if (!original) continue;
+
+    // Extract prefix (remove trailing number) for consistent naming
+    const prefix = original.name.replace(/ \d+$/, "").trim() || original.name;
+    const nextNum = await getNextSessionNumberForPrefix(prefix);
+
+    const [newSession] = await db
+      .insert(sessionsTable)
+      .values({ name: `${prefix} ${nextNum}`, description: original.description })
+      .returning();
+
+    const originalSentences = await db
+      .select()
+      .from(sentencesTable)
+      .where(eq(sentencesTable.sessionId, sessionId))
+      .orderBy(sentencesTable.orderIndex);
+
+    if (originalSentences.length > 0) {
+      await db.insert(sentencesTable).values(
+        originalSentences.map((s, idx) => ({
+          text: s.text,
+          sessionId: newSession.id,
+          orderIndex: idx + 1,
+          assignedUserId: null,
+        }))
+      );
+    }
+    created.push(newSession.id);
+  }
+
+  res.status(201).json({ ok: true, created: created.length });
 });
 
 router.delete("/sessions/:sessionId", async (req, res) => {
@@ -853,7 +931,7 @@ router.post("/suggestions/accept-all", async (req, res) => {
 
     // 4. Triplication + session creation (same algorithm as bulk-upload)
     const MAX_PER_SESSION = 50;
-    let sessionNumber = await getNextSessionNumber();
+    let sessionNumber = await getNextSessionNumberForPrefix("جلسة");
     const createdSessionIds: number[] = [];
 
     for (let copy = 0; copy < 3; copy++) {

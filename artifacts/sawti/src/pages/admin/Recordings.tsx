@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, XCircle, Play, Pause, CheckCheck, AlertTriangle, Trash2, SearchX, Loader2 } from "lucide-react";
+import { CheckCircle, XCircle, Play, Pause, CheckCheck, AlertTriangle, Trash2, SearchX, Loader2, X, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function AdminRecordings() {
@@ -41,7 +41,6 @@ export default function AdminRecordings() {
   });
 
   const deleteOrphaned = useAdminDeleteOrphanedRecordings();
-
   const orphanedSet = new Set(orphanedData?.orphanedIds ?? []);
   const orphanedCount = orphanedData?.orphanedIds.length ?? 0;
 
@@ -49,19 +48,51 @@ export default function AdminRecordings() {
   const [audioElements, setAudioElements] = useState<Record<number, HTMLAudioElement>>({});
   const [audioErrors, setAudioErrors] = useState<Record<number, boolean>>({});
 
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkWorking, setBulkWorking] = useState(false);
+
+  const allIds = (recordings ?? []).map((r) => r.id);
+  const allSelected = allIds.length > 0 && allIds.every((id) => selectedIds.has(id));
+  const someSelected = selectedIds.size > 0;
+
+  // Which selected recordings are downloaded (eligible for deletion)
+  const selectedDownloadedIds = (recordings ?? [])
+    .filter((r) => selectedIds.has(r.id) && (r as unknown as { downloadedAt: string | null }).downloadedAt)
+    .map((r) => r.id);
+
+  const toggleSelectAll = () => {
+    if (allSelected) setSelectedIds(new Set());
+    else setSelectedIds(new Set(allIds));
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: getAdminListRecordingsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getAdminGetDashboardQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getAdminListSessionsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getAdminGetOrphanedRecordingsQueryKey() });
+  };
+
   const togglePlay = (id: number) => {
     if (audioErrors[id]) return;
-
     if (playingId === id) {
       audioElements[id].pause();
       setPlayingId(null);
       return;
     }
-
     if (playingId && audioElements[playingId]) {
       audioElements[playingId].pause();
     }
-
     let audio = audioElements[id];
     if (!audio) {
       audio = new Audio(`/api/admin/recordings/${id}/audio`);
@@ -72,7 +103,6 @@ export default function AdminRecordings() {
       };
       setAudioElements(prev => ({ ...prev, [id]: audio }));
     }
-
     audio.play().then(() => {
       setPlayingId(id);
     }).catch(e => {
@@ -85,14 +115,61 @@ export default function AdminRecordings() {
   const handleUpdateStatus = (id: number, status: "accepted" | "rejected") => {
     updateStatus.mutate({ recordingId: id, data: { status } }, {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getAdminListRecordingsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getAdminGetDashboardQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getAdminListSessionsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getAdminGetOrphanedRecordingsQueryKey() });
+        invalidateAll();
         toast({ title: status === "accepted" ? "تم قبول التسجيل" : "تم رفض التسجيل" });
       }
     });
+  };
+
+  const handleBulkStatus = async (status: "accepted" | "rejected") => {
+    if (selectedIds.size === 0) return;
+    setBulkWorking(true);
+    try {
+      const res = await fetch("/api/admin/recordings/bulk/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds), status }),
+        credentials: "include",
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        toast({ title: d.error ?? "فشل التحديث الجماعي", variant: "destructive" });
+      } else {
+        toast({ title: d.message });
+        invalidateAll();
+        setSelectedIds(new Set());
+      }
+    } catch {
+      toast({ title: "خطأ في الاتصال", variant: "destructive" });
+    } finally {
+      setBulkWorking(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedDownloadedIds.length === 0) return;
+    if (!confirm(`هل أنت متأكد من حذف ${selectedDownloadedIds.length} تسجيل من قاعدة البيانات والخادم؟`)) return;
+    setBulkWorking(true);
+    try {
+      const res = await fetch("/api/admin/recordings/bulk", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedDownloadedIds }),
+        credentials: "include",
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        toast({ title: d.error ?? "فشل الحذف", variant: "destructive" });
+      } else {
+        toast({ title: d.message });
+        invalidateAll();
+        setSelectedIds(new Set());
+      }
+    } catch {
+      toast({ title: "خطأ في الاتصال", variant: "destructive" });
+    } finally {
+      setBulkWorking(false);
+    }
   };
 
   const handleAcceptAll = () => {
@@ -101,16 +178,10 @@ export default function AdminRecordings() {
     if (!confirm(`هل أنت متأكد من قبول ${pending.length} تسجيل معلق؟`)) return;
     acceptAll.mutate(undefined, {
       onSuccess: (data: AcceptAllRecordingsResponse) => {
-        queryClient.invalidateQueries({ queryKey: getAdminListRecordingsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getAdminGetDashboardQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getAdminListSessionsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getAdminGetOrphanedRecordingsQueryKey() });
+        invalidateAll();
         toast({ title: data.message });
       },
-      onError: () => {
-        toast({ title: "فشل في قبول التسجيلات", variant: "destructive" });
-      }
+      onError: () => toast({ title: "فشل في قبول التسجيلات", variant: "destructive" }),
     });
   };
 
@@ -126,15 +197,13 @@ export default function AdminRecordings() {
     if (!confirm(`هل أنت متأكد من حذف ${orphanedCount} تسجيل يتيم؟`)) return;
     deleteOrphaned.mutate(undefined, {
       onSuccess: (data: DeleteOrphanedRecordingsResponse) => {
-        queryClient.invalidateQueries({ queryKey: getAdminListRecordingsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getAdminGetDashboardQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getAdminGetOrphanedRecordingsQueryKey() });
+        invalidateAll();
         toast({ title: data.message });
       },
       onError: (err: unknown) => {
         const message = err instanceof Error ? err.message : "فشل في حذف التسجيلات اليتيمة";
         toast({ title: "فشل في حذف التسجيلات اليتيمة", description: message, variant: "destructive" });
-      }
+      },
     });
   };
 
@@ -144,10 +213,10 @@ export default function AdminRecordings() {
 
   return (
     <div className="space-y-6" dir="rtl">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-3">
         <h1 className="text-3xl font-bold text-primary">التسجيلات</h1>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {pendingCount > 0 && (
             <Button
               variant="outline"
@@ -167,15 +236,9 @@ export default function AdminRecordings() {
             disabled={isCheckingOrphans}
           >
             {isCheckingOrphans ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                جاري الفحص...
-              </>
+              <><Loader2 className="h-4 w-4 animate-spin" />جاري الفحص...</>
             ) : (
-              <>
-                <SearchX className="h-4 w-4" />
-                فحص اليتيمة
-              </>
+              <><SearchX className="h-4 w-4" />فحص اليتيمة</>
             )}
           </Button>
 
@@ -191,8 +254,8 @@ export default function AdminRecordings() {
             </Button>
           )}
 
-          <div className="w-64">
-            <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val as "pending" | "accepted" | "rejected" | "all")}>
+          <div className="w-56">
+            <Select value={statusFilter} onValueChange={(val) => { setStatusFilter(val as typeof statusFilter); setSelectedIds(new Set()); }}>
               <SelectTrigger dir="rtl">
                 <SelectValue placeholder="تصفية حسب الحالة" />
               </SelectTrigger>
@@ -224,10 +287,68 @@ export default function AdminRecordings() {
         </div>
       )}
 
+      {/* Bulk action bar */}
+      {someSelected && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-primary/5 border border-primary/20 rounded-lg flex-wrap">
+          <span className="text-sm font-medium text-primary">
+            تم تحديد {selectedIds.size} تسجيل
+          </span>
+          <div className="flex items-center gap-2 mr-auto flex-wrap">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 border-green-300 text-green-700 hover:bg-green-50"
+              onClick={() => handleBulkStatus("accepted")}
+              disabled={bulkWorking}
+            >
+              {bulkWorking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+              قبول المحدد
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 border-red-300 text-red-700 hover:bg-red-50"
+              onClick={() => handleBulkStatus("rejected")}
+              disabled={bulkWorking}
+            >
+              {bulkWorking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+              رفض المحدد
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className={`gap-1.5 ${selectedDownloadedIds.length > 0 ? "border-red-400 text-red-700 hover:bg-red-50" : "border-slate-200 text-slate-400 cursor-not-allowed"}`}
+              onClick={handleBulkDelete}
+              disabled={bulkWorking || selectedDownloadedIds.length === 0}
+              title={selectedDownloadedIds.length === 0 ? "الحذف متاح فقط للتسجيلات التي تم تنزيلها" : `حذف ${selectedDownloadedIds.length} تسجيل تم تنزيله`}
+            >
+              {bulkWorking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              حذف المُنزَّل ({selectedDownloadedIds.length})
+            </Button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground"
+              title="إلغاء التحديد"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="border rounded-md">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10 text-right">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleSelectAll}
+                  className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
+                  title="تحديد الكل"
+                />
+              </TableHead>
               <TableHead className="text-right">الجملة</TableHead>
               <TableHead className="text-right">المستخدم</TableHead>
               <TableHead className="text-right">الجلسة</TableHead>
@@ -239,14 +360,37 @@ export default function AdminRecordings() {
           <TableBody>
             {recordings?.map((rec) => {
               const isOrphaned = orphanedSet.has(rec.id);
+              const isChecked = selectedIds.has(rec.id);
+              const isDownloaded = !!(rec as unknown as { downloadedAt: string | null }).downloadedAt;
+
               return (
-                <TableRow key={rec.id} className={isOrphaned ? "bg-red-50 border-red-100" : undefined}>
+                <TableRow
+                  key={rec.id}
+                  className={
+                    isOrphaned ? "bg-red-50 border-red-100" :
+                    isChecked ? "bg-primary/5" : undefined
+                  }
+                >
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => toggleSelect(rec.id)}
+                      className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
+                    />
+                  </TableCell>
                   <TableCell className="font-medium max-w-md">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {isOrphaned && (
                         <Badge variant="outline" className="bg-red-100 text-red-700 border-red-300 shrink-0 text-xs gap-1">
                           <AlertTriangle className="h-3 w-3" />
                           يتيم
+                        </Badge>
+                      )}
+                      {isDownloaded && (
+                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 shrink-0 text-xs gap-1">
+                          <Download className="h-3 w-3" />
+                          تم التنزيل
                         </Badge>
                       )}
                       {rec.sentenceText}
@@ -307,7 +451,7 @@ export default function AdminRecordings() {
             })}
             {recordings?.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                   لا توجد تسجيلات
                 </TableCell>
               </TableRow>

@@ -11,6 +11,7 @@ export const recordingsTable = pgTable("recordings", {
   sentenceId: integer("sentence_id").notNull(),
   filePath: text("file_path").notNull(),
   status: recordingStatusEnum("status").notNull().default("pending"),
+  downloadedAt: timestamp("downloaded_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

@@ -636,6 +636,61 @@ router.post("/sessions/:sessionId/sentences", async (req, res) => {
   });
 });
 
+router.patch("/recordings/bulk/status", async (req, res) => {
+  const { ids, status } = req.body as { ids: unknown; status: unknown };
+  if (!Array.isArray(ids) || ids.length === 0 || (status !== "accepted" && status !== "rejected")) {
+    res.status(400).json({ error: "بيانات غير صالحة" });
+    return;
+  }
+  const numericIds = (ids as unknown[]).map(Number).filter((n) => !isNaN(n));
+  if (numericIds.length === 0) {
+    res.status(400).json({ error: "معرفات غير صالحة" });
+    return;
+  }
+
+  if (status === "rejected") {
+    const recordings = await db.select().from(recordingsTable).where(inArray(recordingsTable.id, numericIds));
+    for (const rec of recordings) {
+      if (rec.filePath) await deleteRecording(rec.filePath);
+    }
+    await db.delete(recordingsTable).where(inArray(recordingsTable.id, numericIds));
+  } else {
+    await db.update(recordingsTable).set({ status: "accepted" }).where(inArray(recordingsTable.id, numericIds));
+  }
+
+  res.json({ message: `تم تحديث ${numericIds.length} تسجيل`, count: numericIds.length });
+});
+
+router.delete("/recordings/bulk", async (req, res) => {
+  const { ids } = req.body as { ids: unknown };
+  if (!Array.isArray(ids) || ids.length === 0) {
+    res.status(400).json({ error: "لم يتم تحديد تسجيلات" });
+    return;
+  }
+  const numericIds = (ids as unknown[]).map(Number).filter((n) => !isNaN(n));
+  if (numericIds.length === 0) {
+    res.status(400).json({ error: "معرفات غير صالحة" });
+    return;
+  }
+
+  // Only allow deleting recordings that have been downloaded
+  const recordings = await db.select().from(recordingsTable).where(inArray(recordingsTable.id, numericIds));
+  const downloadedRecordings = recordings.filter((r) => r.downloadedAt !== null);
+
+  if (downloadedRecordings.length === 0) {
+    res.status(403).json({ error: "لا يمكن حذف تسجيلات لم يتم تنزيلها بعد" });
+    return;
+  }
+
+  const downloadedIds = downloadedRecordings.map((r) => r.id);
+  for (const rec of downloadedRecordings) {
+    if (rec.filePath) await deleteRecording(rec.filePath);
+  }
+  await db.delete(recordingsTable).where(inArray(recordingsTable.id, downloadedIds));
+
+  res.json({ message: `تم حذف ${downloadedIds.length} تسجيل`, deleted: downloadedIds.length });
+});
+
 router.post("/recordings/accept-all", async (req, res) => {
   const pendingRecordings = await db
     .select()
@@ -671,6 +726,7 @@ router.get("/recordings", async (req, res) => {
       sentenceText: sentencesTable.text,
       status: recordingsTable.status,
       filePath: recordingsTable.filePath,
+      downloadedAt: recordingsTable.downloadedAt,
       createdAt: recordingsTable.createdAt,
     })
     .from(recordingsTable)
@@ -689,6 +745,7 @@ router.get("/recordings", async (req, res) => {
     filtered.map((r) => ({
       ...r,
       createdAt: r.createdAt.toISOString(),
+      downloadedAt: r.downloadedAt ? r.downloadedAt.toISOString() : null,
     }))
   );
 });
@@ -1045,6 +1102,7 @@ router.get("/download", async (req, res) => {
   archive.pipe(res);
 
   const csvRows = ["file_name,sentence_text,username,session,status,timestamp"];
+  const downloadedIds: number[] = [];
 
   for (const rec of filtered) {
     const buffer = await downloadRecordingBuffer(rec.filePath);
@@ -1056,11 +1114,20 @@ router.get("/download", async (req, res) => {
       csvRows.push(
         `"${fileName}","${rec.sentenceText.replace(/"/g, '""')}","${rec.username}","${rec.sessionName}","${rec.status}","${rec.createdAt.toISOString()}"`
       );
+      downloadedIds.push(rec.id);
     }
   }
 
   archive.append(csvRows.join("\n"), { name: "metadata.csv" });
   await archive.finalize();
+
+  // Mark successfully downloaded recordings
+  if (downloadedIds.length > 0) {
+    await db
+      .update(recordingsTable)
+      .set({ downloadedAt: new Date() })
+      .where(inArray(recordingsTable.id, downloadedIds));
+  }
 });
 
 export default router;

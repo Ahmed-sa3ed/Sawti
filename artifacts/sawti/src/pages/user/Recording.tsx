@@ -236,72 +236,12 @@ export default function UserRecording() {
     });
   };
 
-  if (isLoading || !sentences) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-slate-400 text-lg">جاري التحميل...</p>
-      </div>
-    );
-  }
-  if (sentences.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-slate-400 text-lg">لا توجد جمل في هذه الجلسة</p>
-      </div>
-    );
-  }
-
-  const recordedCount = sentences.filter(s => !!s.recordingId && s.recordingStatus !== "rejected").length;
-  const total = sentences.length;
-
-  // All sentences accepted → show done screen
-  if (!sessionDone && pendingSentences.length === 0 && total > 0) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8" dir="rtl">
-        <div className="bg-slate-900 border border-teal-500/30 rounded-3xl p-12 max-w-2xl w-full text-center shadow-[0_0_40px_rgba(20,184,166,0.1)] space-y-6">
-          <div className="w-20 h-20 rounded-full bg-teal-500/20 border border-teal-500/30 flex items-center justify-center mx-auto">
-            <CheckCircle className="h-10 w-10 text-teal-400" />
-          </div>
-          <h2 className="text-3xl font-bold text-slate-50">أحسنت! انتهيت من هذه الجلسة</h2>
-          <p className="text-slate-400 text-lg leading-relaxed">
-            لقد أكملت جميع جمل هذه الجلسة. يمكنك الاستراحة الآن أو الانتقال إلى الجلسة التالية.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
-            <button className="flex items-center gap-2 justify-center px-6 py-3 rounded-full bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 transition-colors font-medium" onClick={() => setLocation("/user")}>
-              <ArrowRight className="h-4 w-4" /> العودة للرئيسية
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!currentSentence) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-slate-400 text-lg">جاري التحميل...</p>
-      </div>
-    );
-  }
-
+  // Compute nextSession early so it's available in the sessionDone screen
   const nextSession = allSessions?.find(s => s.id !== sid && s.recordedCount < s.totalSentences);
 
-  const isInIframe = window !== window.top;
-  const fullPageUrl = `${window.location.origin}${window.location.pathname}`;
-
-  const hasRecording = !!audioBlob && !isRecording;
-  const activeStep = isRecording ? 2 : hasRecording ? 3 : isSpeaking ? 1 : 2;
-
-  const getStepStyle = (step: number) =>
-    activeStep === step
-      ? "bg-slate-950 text-teal-400 border-2 border-teal-500 shadow-[0_0_15px_rgba(20,184,166,0.3)]"
-      : step < activeStep
-      ? "bg-teal-500/20 text-teal-300 border-2 border-teal-500/40"
-      : "bg-slate-950 text-slate-400 border-2 border-slate-700";
-
-  const getStepLabelStyle = (step: number) =>
-    activeStep === step ? "text-teal-400 font-semibold" : step < activeStep ? "text-teal-500/70" : "text-slate-400";
-
+  // Show session-complete screen immediately when done — must be before the
+  // isLoading guard, because invalidating queries causes isLoading to flip
+  // back to true and would hide this screen.
   if (sessionDone) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8" dir="rtl">
@@ -333,6 +273,78 @@ export default function UserRecording() {
       </div>
     );
   }
+
+  if (isLoading || !sentences) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-slate-400 text-lg">جاري التحميل...</p>
+      </div>
+    );
+  }
+  if (sentences.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-slate-400 text-lg">لا توجد جمل في هذه الجلسة</p>
+      </div>
+    );
+  }
+
+  const recordedCount = sentences.filter(s => !!s.recordingId && s.recordingStatus !== "rejected").length;
+  const total = sentences.length;
+
+  // All sentences accepted (e.g. on page reload) → show done screen
+  if (pendingSentences.length === 0 && total > 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8" dir="rtl">
+        <div className="bg-slate-900 border border-teal-500/30 rounded-3xl p-12 max-w-2xl w-full text-center shadow-[0_0_40px_rgba(20,184,166,0.1)] space-y-6">
+          <div className="w-20 h-20 rounded-full bg-teal-500/20 border border-teal-500/30 flex items-center justify-center mx-auto">
+            <CheckCircle className="h-10 w-10 text-teal-400" />
+          </div>
+          <h2 className="text-3xl font-bold text-slate-50">أحسنت! انتهيت من هذه الجلسة</h2>
+          <p className="text-slate-400 text-lg leading-relaxed">
+            لقد أكملت جميع جمل هذه الجلسة. يمكنك الاستراحة الآن أو الانتقال إلى الجلسة التالية.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
+            <button className="flex items-center gap-2 justify-center px-6 py-3 rounded-full bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 transition-colors font-medium" onClick={() => setLocation("/user")}>
+              <ArrowRight className="h-4 w-4" /> العودة للرئيسية
+            </button>
+            {nextSession && (
+              <button
+                className="flex items-center gap-2 justify-center px-6 py-3 rounded-full bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold transition-colors shadow-[0_0_20px_rgba(20,184,166,0.4)]"
+                onClick={() => setLocation(`/user/session/${nextSession.id}`)}
+              >
+                الانتقال للجلسة التالية
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentSentence) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-slate-400 text-lg">جاري التحميل...</p>
+      </div>
+    );
+  }
+
+  const isInIframe = window !== window.top;
+  const fullPageUrl = `${window.location.origin}${window.location.pathname}`;
+
+  const hasRecording = !!audioBlob && !isRecording;
+  const activeStep = isRecording ? 2 : hasRecording ? 3 : isSpeaking ? 1 : 2;
+
+  const getStepStyle = (step: number) =>
+    activeStep === step
+      ? "bg-slate-950 text-teal-400 border-2 border-teal-500 shadow-[0_0_15px_rgba(20,184,166,0.3)]"
+      : step < activeStep
+      ? "bg-teal-500/20 text-teal-300 border-2 border-teal-500/40"
+      : "bg-slate-950 text-slate-400 border-2 border-slate-700";
+
+  const getStepLabelStyle = (step: number) =>
+    activeStep === step ? "text-teal-400 font-semibold" : step < activeStep ? "text-teal-500/70" : "text-slate-400";
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden" dir="rtl">

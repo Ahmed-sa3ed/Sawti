@@ -40,7 +40,7 @@ export default function AdminDownload() {
                 <SelectTrigger dir="rtl">
                   <SelectValue placeholder="اختر المستخدم" />
                 </SelectTrigger>
-                <SelectContent dir="rtl">
+                <SelectContent dir="rtl" className="max-h-60 overflow-y-auto">
                   <SelectItem value="all">جميع المستخدمين</SelectItem>
                   {users?.filter(u => u.role === "user").map(u => (
                     <SelectItem key={u.id} value={u.id.toString()}>{u.username}</SelectItem>
@@ -55,7 +55,7 @@ export default function AdminDownload() {
                 <SelectTrigger dir="rtl">
                   <SelectValue placeholder="اختر الجلسة" />
                 </SelectTrigger>
-                <SelectContent dir="rtl">
+                <SelectContent dir="rtl" className="max-h-60 overflow-y-auto">
                   <SelectItem value="all">جميع الجلسات</SelectItem>
                   {sessions?.map(s => (
                     <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>

@@ -1,157 +1,124 @@
-import { Readable } from "stream";
 import type { Response } from "express";
+import { createClient } from "@supabase/supabase-js";
 import { logger } from "./logger.js";
 
-const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
-const SIGNED_URL_TTL_SEC = 900;
-
-function getBucketAndObject(objectPath: string): { bucketName: string; objectName: string } {
-  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-  if (!bucketId) {
-    throw new Error(
-      "DEFAULT_OBJECT_STORAGE_BUCKET_ID is not set. Object storage has not been provisioned."
-    );
+function getRequiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} environment variable is required`);
   }
-  return { bucketName: bucketId, objectName: objectPath };
+  return value;
 }
 
-async function getSignedUrl(
-  bucketName: string,
-  objectName: string,
-  method: "GET" | "PUT" | "DELETE"
-): Promise<string> {
-  const response = await fetch(
-    `${REPLIT_SIDECAR_ENDPOINT}/object-storage/signed-object-url`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        bucket_name: bucketName,
-        object_name: objectName,
-        method,
-        expires_at: new Date(Date.now() + SIGNED_URL_TTL_SEC * 1000).toISOString(),
-      }),
-      signal: AbortSignal.timeout(30_000),
+const supabaseUrl = getRequiredEnv("SUPABASE_URL");
+const supabaseServiceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+const bucketName = process.env.SUPABASE_STORAGE_BUCKET ?? "recordings";
+
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
+
+async function downloadRecordingBlob(objectPath: string): Promise<Blob | null> {
+  const { data, error } = await supabase.storage
+    .from(bucketName)
+    .download(objectPath);
+
+  if (error) {
+    if (
+      error.message.toLowerCase().includes("not found") ||
+      error.message.toLowerCase().includes("does not exist")
+    ) {
+      return null;
     }
-  );
-  if (!response.ok) {
-    throw new Error(
-      `Sidecar returned ${response.status} when signing ${method} URL for "${objectName}"`
-    );
+
+    throw error;
   }
-  const body = (await response.json()) as { signed_url: string };
-  return body.signed_url;
+
+  return data;
 }
 
 export async function uploadRecordingBuffer(
   buffer: Buffer,
-  objectPath: string
+  objectPath: string,
 ): Promise<void> {
-  const { bucketName, objectName } = getBucketAndObject(objectPath);
-  const url = await getSignedUrl(bucketName, objectName, "PUT");
-  const uploadResponse = await fetch(url, {
-    method: "PUT",
-    body: buffer,
-    headers: { "Content-Type": "audio/wav" },
-  });
-  if (!uploadResponse.ok) {
-    throw new Error(`GCS upload failed with status ${uploadResponse.status}`);
+  const { error } = await supabase.storage
+    .from(bucketName)
+    .upload(objectPath, buffer, {
+      contentType: "audio/wav",
+      upsert: true,
+    });
+
+  if (error) {
+    throw new Error(`Supabase upload failed: ${error.message}`);
   }
 }
 
 export async function deleteRecording(objectPath: string): Promise<void> {
   try {
-    const { bucketName, objectName } = getBucketAndObject(objectPath);
-    const url = await getSignedUrl(bucketName, objectName, "DELETE");
-    await fetch(url, { method: "DELETE" });
-  } catch {
-    // Best-effort: ignore errors when deleting
+    const { error } = await supabase.storage
+      .from(bucketName)
+      .remove([objectPath]);
+
+    if (error) {
+      logger.warn({ error, objectPath }, "failed to delete recording from Supabase");
+    }
+  } catch (err) {
+    logger.warn({ err, objectPath }, "failed to delete recording from Supabase");
   }
 }
 
 export async function streamRecordingToResponse(
   objectPath: string,
-  res: Response
+  res: Response,
 ): Promise<void> {
-  let url: string;
+  let blob: Blob | null;
+
   try {
-    const { bucketName, objectName } = getBucketAndObject(objectPath);
-    url = await getSignedUrl(bucketName, objectName, "GET");
+    blob = await downloadRecordingBlob(objectPath);
   } catch (err) {
-    logger.error({ err, objectPath }, "failed to get signed URL for recording");
+    logger.error({ err, objectPath }, "failed to download recording from Supabase");
     res.status(500).json({ error: "تعذر الوصول إلى الملف الصوتي" });
     return;
   }
 
-  const gcsResponse = await fetch(url);
-  if (gcsResponse.status === 404) {
+  if (!blob) {
     res.status(404).json({ error: "الملف الصوتي غير موجود" });
     return;
   }
-  if (!gcsResponse.ok) {
-    logger.error({ status: gcsResponse.status, objectPath }, "GCS returned error for recording");
-    res.status(502).json({ error: "تعذر تحميل الملف الصوتي" });
-    return;
-  }
 
-  res.setHeader("Content-Type", gcsResponse.headers.get("content-type") ?? "audio/wav");
-  const contentLength = gcsResponse.headers.get("content-length");
-  if (contentLength) {
-    res.setHeader("Content-Length", contentLength);
-  }
+  const buffer = Buffer.from(await blob.arrayBuffer());
+
+  res.setHeader("Content-Type", blob.type || "audio/wav");
+  res.setHeader("Content-Length", buffer.length.toString());
   res.setHeader("Accept-Ranges", "bytes");
-
-  if (gcsResponse.body) {
-    Readable.fromWeb(gcsResponse.body as Parameters<typeof Readable.fromWeb>[0]).pipe(res);
-  } else {
-    res.end();
-  }
+  res.end(buffer);
 }
 
-export async function downloadRecordingBuffer(objectPath: string): Promise<Buffer | null> {
+export async function downloadRecordingBuffer(
+  objectPath: string,
+): Promise<Buffer | null> {
   try {
-    const { bucketName, objectName } = getBucketAndObject(objectPath);
-    const url = await getSignedUrl(bucketName, objectName, "GET");
-    const response = await fetch(url);
-    if (!response.ok) return null;
-    const arrayBuffer = await response.arrayBuffer();
-    return Buffer.from(arrayBuffer);
-  } catch {
+    const blob = await downloadRecordingBlob(objectPath);
+    if (!blob) return null;
+
+    return Buffer.from(await blob.arrayBuffer());
+  } catch (err) {
+    logger.warn({ err, objectPath }, "failed to download recording buffer");
     return null;
   }
 }
 
-/**
- * Check whether a recording file exists in object storage.
- * Returns:
- *   true  — file is present (2xx response from storage)
- *   false — file is definitively missing (storage returned 404)
- *   null  — check failed due to an infrastructure/network error; result is unknown
- */
-export async function checkRecordingExists(objectPath: string): Promise<boolean | null> {
-  let url: string;
+export async function checkRecordingExists(
+  objectPath: string,
+): Promise<boolean | null> {
   try {
-    const { bucketName, objectName } = getBucketAndObject(objectPath);
-    url = await getSignedUrl(bucketName, objectName, "GET");
+    const blob = await downloadRecordingBlob(objectPath);
+    return blob !== null;
   } catch (err) {
-    // Sidecar unavailable or mis-configured — result is unknown
-    logger.warn({ err, objectPath }, "checkRecordingExists: failed to obtain signed URL");
+    logger.warn({ err, objectPath }, "checkRecordingExists failed");
     return null;
   }
-
-  let storageResponse: Awaited<ReturnType<typeof fetch>>;
-  try {
-    storageResponse = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-    if (storageResponse.body) storageResponse.body.cancel().catch(() => {});
-  } catch (err) {
-    // Network / timeout error — cannot determine presence
-    logger.warn({ err, objectPath }, "checkRecordingExists: storage fetch failed");
-    return null;
-  }
-
-  if (storageResponse.status === 404) return false;
-  if (storageResponse.ok) return true;
-  // Any other non-200 status (403, 500, …) is treated as an infrastructure error
-  logger.warn({ status: storageResponse.status, objectPath }, "checkRecordingExists: unexpected storage status");
-  return null;
 }

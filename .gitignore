@@ -55,3 +55,6 @@ artifacts/api-server/recordings/
 attached_assets/*.png
 attached_assets/*.jpg
 attached_assets/*.jpeg
+
+#env files
+.env

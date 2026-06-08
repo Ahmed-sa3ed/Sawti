@@ -1,4 +1,7 @@
 {
+  "outputDirectory": "artifacts/sawti/dist/public",
+  "buildCommand": "pnpm --filter @workspace/sawti build",
+  "installCommand": "pnpm install",
   "rewrites": [
     {
       "source": "/api/:path*",

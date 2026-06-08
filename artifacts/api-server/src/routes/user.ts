@@ -268,7 +268,8 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
   try {
     await uploadRecordingBuffer(wavBuffer, objectPath);
   } catch (uploadErr) {
-    logger.error({ uploadErr }, "failed to upload recording to object storage");
+    const uploadErrMsg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+    logger.error({ err: uploadErr, uploadErrMsg }, "failed to upload recording to object storage");
     res.status(500).json({ error: "تعذر حفظ الملف الصوتي. يرجى المحاولة مجدداً." });
     return;
   }

@@ -27,9 +27,8 @@ const execAsync = promisify(exec);
 const router = Router();
 router.use(requireUser);
 
-function getRecordingObjectPath(userId: number, sessionName: string, timestamp: number): string {
-  const safeName = sessionName.replace(/[^a-zA-Z0-9_\u0600-\u06FF-]/g, "_");
-  return `recordings/${userId}/${safeName}/recording_${timestamp}.wav`;
+function getRecordingObjectPath(userId: number, sessionId: number, timestamp: number): string {
+  return `recordings/${userId}/session_${sessionId}/recording_${timestamp}.wav`;
 }
 
 async function convertToWav16kMono(inputBuffer: Buffer, inputMimeType: string): Promise<Buffer> {
@@ -263,7 +262,7 @@ router.post("/recordings", upload.single("audio"), async (req, res) => {
     .limit(1);
 
   const timestamp = Date.now();
-  const objectPath = getRecordingObjectPath(userId, sessionRow?.name ?? String(sessionId), timestamp);
+  const objectPath = getRecordingObjectPath(userId, sessionId, timestamp);
 
   try {
     await uploadRecordingBuffer(wavBuffer, objectPath);
